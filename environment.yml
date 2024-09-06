@@ -1,4 +1,4 @@
-name: intro-ds
+name: master
 channels:
   - conda-forge
 dependencies:
