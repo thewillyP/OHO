@@ -1,0 +1,15 @@
+name: intro-ds
+channels:
+  - conda-forge
+dependencies:
+  - python
+  - pip
+  - pip:
+    - jupyterlab
+    - pandas
+    - matplotlib
+    - numpy
+    - scipy
+    - scikit-learn
+    - seaborn
+    - torch
