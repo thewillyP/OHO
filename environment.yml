@@ -13,3 +13,4 @@ dependencies:
     - scikit-learn
     - seaborn
     - torch
+    - torchvision
