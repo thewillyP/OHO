@@ -4,7 +4,27 @@
 	"name": "CondaDevEnv",
 	"dockerComposeFile": "docker-compose.yml",
 	"service": "app",
-	"workspaceFolder": "/workspace"
+	"workspaceFolder": "/workspace",
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-python.python",
+				"ms-python.debugpy",
+				"mhutchie.git-graph"
+			],
+			"settings": {
+				"editor.formatOnSave": true,
+				"update.showReleaseNotes": false,
+				"git.fetchOnPull": true,
+				"git.autofetch": "all",
+				"git.pruneOnFetch": true,
+				"git.autofetchPeriod": 3600,
+				"githubPullRequests.ignoredPullRequestBranches": [
+					"main"
+				]
+			}
+		}
+	}
 	// "features": {
 	// 	"ghcr.io/devcontainers/features/python:1": {},
 	// 	"ghcr.io/rocker-org/devcontainer-features/miniforge:1": {},
