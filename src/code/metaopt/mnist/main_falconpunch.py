@@ -184,7 +184,7 @@ def train(args, dataset, model, optimizer, saveF=0):
             if counter % args.update_freq == 0 and args.mlr != 0.0:
                 data_vl, target_vl = next(dataset[VALID])
                 data_vl, target_vl = to_torch_variable(data_vl, target_vl, is_cuda)
-                model, loss_vl, optimizer = meta_update(args, data_vl, target_vl, data, target, model, optimizer, noise)
+                model, loss_vl, optimizer = meta_update(args, data_vl, target_vl, data, target, model, optimizer, noise, args.is_cuda)
                 vl_epoch.append(counter)
                 vl_loss_list.append(loss_vl.item())
 
