@@ -84,7 +84,7 @@ def load_mnist(args):
     return dataset
 
 
-def main(args, ifold=0, trial=0, quotient=None, device='cuda', is_cuda=0):  # iscuda not even used
+def main(args, ifold=0, trial=0, quotient=None, device='cuda', is_cuda=1):  # iscuda not even used
 
     dataset = load_mnist(args)
 
@@ -366,7 +366,7 @@ if __name__ == '__main__':
 
     args = parse_args()
     is_cuda = args.is_cuda
-    main(args, ifold=ifold)
+    main(args, ifold=ifold, is_cuda=is_cuda)
 
 
 
