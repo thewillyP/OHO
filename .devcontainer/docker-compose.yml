@@ -3,9 +3,9 @@ services:
     build:
       context: ..
       dockerfile: .devcontainer/Dockerfile
-    container_name: conda
+    container_name: OHO
     volumes:
       - ..:/workspace:cached
     ports:
-      - "8888:8888"
+      - "9999:8888"
     command: "/bin/bash -c 'conda init && source ~/.bashrc && conda activate $(grep -m 1 \"name: \" environment.yml | cut -d \" \" -f 2) && jupyter lab --notebook-dir=/workspace/src/notebooks --ip='0.0.0.0' --port=8888 --no-browser --allow-root'"
