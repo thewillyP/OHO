@@ -15,3 +15,5 @@ dependencies:
   - seaborn
   - pytorch-cuda=12.4
   - torchvision
+  - pip:
+    - -e ./src/code
