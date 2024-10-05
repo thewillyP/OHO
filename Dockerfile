@@ -1,4 +1,4 @@
-FROM mambaorg/micromamba AS build
+FROM mambaorg/micromamba
 
 USER root
 
@@ -10,6 +10,11 @@ RUN mkdir /var/run/sshd
 EXPOSE 2222
 # jupyter server
 EXPOSE 9999
+
+# Set bash as the default shell
+SHELL ["/bin/bash", "-c"]
+# Optional: Set bash as the default for login shells
+RUN echo "exec /bin/bash" >> /etc/profile
 
 WORKDIR /workspace
 
