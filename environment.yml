@@ -13,7 +13,8 @@ dependencies:
   - scipy
   - scikit-learn
   - seaborn
-  - pytorch-cuda=12.3
+  - pytorch
+  - pytorch-cuda=12.4
   - torchvision
   - pip:
     - -e ./src/code
