@@ -1,4 +1,4 @@
-FROM mambaorg/micromamba
+FROM mambaorg/micromamba:jammy-cuda-12.3.2
 
 USER root
 
