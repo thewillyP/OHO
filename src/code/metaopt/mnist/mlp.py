@@ -10,6 +10,94 @@ import numpy as np
 from metaopt.util_ml import *
 from metaopt.util import *
 
+
+
+
+
+class BPTTRNN(nn.Module):
+
+    def __init__(self, n_in: int, n_h: int, n_out: int, sequence_length: int, lr_init, lambda_l2, is_cuda=0):
+        super(BPTTRNN, self).__init__()
+
+        self.rnn = nn.RNN(n_in, n_h, 1, batch_first=True, nonlinearity='tanh')  # sampels weights from uniform which is pretty big
+        self.fc = nn.Linear(n_h, n_out)
+
+        self.initH = lambda x: torch.zeros(1, x.size(0), n_h).to('cpu' if is_cuda==0 else 'gpu') 
+        self.reshapeImage = lambda images: images.view(-1, sequence_length, n_in).to('cpu' if is_cuda==0 else 'gpu')
+
+
+        param_sizes = [p.numel() for p in self.parameters()]
+        self.n_params = sum(param_sizes)
+        self.param_shapes = [tuple(p.shape) for p in self.parameters()]
+        self.param_cumsum = np.cumsum([0] + param_sizes)
+
+        self.reset_jacob(is_cuda)
+        self.eta  = lr_init
+        self.lambda_l2 = lambda_l2
+        self.grad_norm = 0
+        self.grad_norm_vl = 0
+        self.grad_angle = 0
+        self.param_norm = 0
+        self.dFdlr_norm = 0
+        self.dFdl2_nrom = 0
+
+    def reset_jacob(self, is_cuda=1):
+        self.dFdlr = torch.zeros(self.n_params) 
+        self.dFdl2 = torch.zeros(self.n_params)
+        self.dFdl2_norm = 0
+        self.dFdlr_norm = 0
+        if is_cuda: 
+            self.dFdlr = self.dFdlr.cuda()
+            self.dFdl2 = self.dFdl2.cuda()
+
+    def forward(self, x, logsoftmaxF=1):
+        x = self.reshapeImage(x)
+        h0 = self.initH(x)
+        x, _ = self.rnn(x, h0)
+        x = x[:, -1, :]
+        x = self.fc(x)
+        if logsoftmaxF:
+            return F.log_softmax(x, dim=1)
+        else:
+            return F.softmax(x, dim=1)
+
+    def update_dFdlr(self, Hv, param, grad, is_cuda=0, opt_type='sgd', noise=None, N=50000):
+
+        #grad = flatten_array([p.grad.data.numpy() for p in self.parameters()])
+        #tmp = np.ones(self.n_params) * 0.01 
+        self.Hlr = self.eta*Hv
+        self.Hlr_norm = norm(self.Hlr)
+        self.dFdlr_norm = norm(self.dFdlr)
+        self.dFdlr.data = self.dFdlr.data * (1-2*self.lambda_l2*self.eta) \
+                                - self.Hlr - grad - 2*self.lambda_l2*param
+        if opt_type == 'sgld':
+            if noise is None: noise = torch.randn(size=param.shape)
+            self.dFdlr.data = self.dFdlr.data + 0.5 * torch.sqrt(2*noise / self.eta / N)
+
+    def update_dFdlambda_l2(self, Hv, param, grad, is_cuda=0):
+       
+        self.Hl2 = self.eta*Hv
+        self.Hl2_norm = norm(self.Hl2)
+        self.dFdl2_norm = norm(self.dFdl2)
+        self.dFdl2.data = self.dFdl2.data * (1-2*self.lambda_l2*self.eta) \
+                                                - self.Hl2  - 2*self.eta*param
+
+
+    def update_eta(self, mlr, val_grad):
+
+        val_grad = flatten_array(val_grad)
+        delta = val_grad.dot(self.dFdlr).data.cpu().numpy()
+        self.eta -= mlr * delta
+        self.eta = np.maximum(0.0, self.eta)
+
+    def update_lambda(self, mlr, val_grad):
+
+        val_grad = flatten_array(val_grad)
+        delta = val_grad.dot(self.dFdl2).data.cpu().numpy()
+        self.lambda_l2 -= mlr * delta 
+        self.lambda_l2 = np.maximum(0, self.lambda_l2)
+        self.lambda_l2 = np.minimum(0.0002, self.lambda_l2)
+
 class MLP_Drop(nn.Module):
 
     def __init__(self, n_layers, layer_sizes, lr_init, lambda_l2, is_cuda=0):

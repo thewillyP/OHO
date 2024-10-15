@@ -1,0 +1,9 @@
+{
+    "recommendations": [
+        "ms-python.python",
+        "ms-python.debugpy",
+        "mhutchie.git-graph",
+        "njqdev.vscode-python-typehint",
+        "oderwat.indent-rainbow"
+    ],
+}

@@ -3,6 +3,7 @@ import torch
 import torch.optim as optim
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
+import torch.backends.cudnn as cudnn
 from torchvision import datasets, transforms
 from copy import copy
 import numpy as np
@@ -100,9 +101,17 @@ def main(args, ifold=0, trial=0, quotient=None, device='cuda', is_cuda=1):  # is
     elif args.model_type == 'mlp_drop':
         model = MLP_Drop(num_layers, hdims, args.lr, args.lambda_l2, is_cuda=is_cuda)
         optimizer = optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.lambda_l2)
+    elif args.model_type == 'bptt':
+        model = BPTTRNN(28, 30, args.ydim, 28, args.lr, args.lambda_l2, is_cuda=is_cuda)
+        optimizer = optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.lambda_l2)
     else:
         model = MLP(num_layers, hdims, args.lr, args.lambda_l2, is_cuda=is_cuda)
         optimizer = optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.lambda_l2)
+    
+    if args.is_cuda:
+        model = model.to(device)
+        cudnn.benchmark = True
+
     print('Model Type: %s Opt Type: %s Update Freq %d Reset Freq %d' \
             % (args.model_type, args.opt_type, args.update_freq, args.reset_freq))
  
@@ -162,9 +171,8 @@ def train(args, dataset, model, optimizer, saveF=0, is_cuda=1):
     for epoch in range(args.num_epoch+1):
         if epoch % 10 == 0:
             te_losses, te_accs = [], []
-            for batch_idx, (data, target) in enumerate(dataset[TEST]):
+            for batch_idx, (data, target) in enumerate(dataset[TEST]):  # data = (batch, channel=1, 28, 28)
                 data, target = to_torch_variable(data, target, is_cuda, floatTensorF=1)
-
                 _, loss, accuracy, _, _, _ = feval(data, target, model, optimizer, mode='eval', is_cuda=is_cuda)
                 te_losses.append(loss)
                 te_accs.append(accuracy)
@@ -196,6 +204,7 @@ def train(args, dataset, model, optimizer, saveF=0, is_cuda=1):
             if args.reset_freq > 0 and counter % args.reset_freq == 0:
                 model.reset_jacob() 
 
+            """ meta update only uses most recent gradient on the update freq. feval resets gradient everytime its called. so meta_update will not use the sum of gradients """
             if counter % args.update_freq == 0 and args.mlr != 0.0:
                 data_vl, target_vl = next(dataset[VALID])
                 data_vl, target_vl = to_torch_variable(data_vl, target_vl, is_cuda)
@@ -280,7 +289,9 @@ def feval(data, target, model, optimizer, mode='eval', is_cuda=0, opt_type='sgd'
     grad_vec = []
     noise = None
     if 'train' in mode:
-        loss.backward()
+        loss.backward()  # check how getting bacthed, try gigureout out how gradient modificat
+
+        print(flatten_array(get_grads(model.parameters(), is_cuda)).data)
 
         for i,param in enumerate(model.parameters()):
             if opt_type == 'sgld':
@@ -302,6 +313,7 @@ def feval(data, target, model, optimizer, mode='eval', is_cuda=0, opt_type='sgd'
 
     elif 'grad' in mode:
         loss.backward()
+    
 
     return model, loss.item(), accuracy.item(), output, noise, grad_vec
 
@@ -321,6 +333,9 @@ def meta_update(args, data_vl, target_vl, data_tr, target_tr, model, optimizer, 
 
     #Compute angle between tr and vl grad
     grad = flatten_array(get_grads(model.parameters(), is_cuda)).data
+    print("hi",grad)
+    quit()
+    
     param = flatten_array(model.parameters())#.data.cpu().numpy()
     model.grad_norm = norm(grad)
     model.param_norm = norm(param)

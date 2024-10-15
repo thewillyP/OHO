@@ -1,4 +1,4 @@
-FROM mambaorg/micromamba
+FROM mambaorg/micromamba as dev
 
 USER root
 
@@ -19,3 +19,7 @@ COPY ./environment.yml .
 COPY ./src ./src
 
 RUN micromamba env create -f environment.yml && micromamba clean -afy
+
+
+# FROM dev as prod 
+

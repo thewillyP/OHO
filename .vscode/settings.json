@@ -1,2 +1,18 @@
 {
+    "editor.formatOnSave": true,
+    "update.showReleaseNotes": false,
+    "git.fetchOnPull": true,
+    "git.autofetch": "all",
+    "git.pruneOnFetch": true,
+    "git.autofetchPeriod": 3600,
+    "githubPullRequests.ignoredPullRequestBranches": [
+        "main"
+    ],
+    "remote.SSH.defaultExtensions": [
+        "ms-python.python",
+        "ms-python.debugpy",
+        "mhutchie.git-graph",
+        "njqdev.vscode-python-typehint",
+        "oderwat.indent-rainbow"
+    ],
 }
