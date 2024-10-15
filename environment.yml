@@ -1,8 +1,8 @@
 name: master
 channels:
   - pytorch
-  - conda-forge
   - nvidia
+  - conda-forge
 dependencies:
   - python>=3.8
   - pip
@@ -13,6 +13,7 @@ dependencies:
   - scipy
   - scikit-learn
   - seaborn
+  - pytorch
   - pytorch-cuda=12.4
   - torchvision
   - pip:
