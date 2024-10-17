@@ -16,5 +16,7 @@ dependencies:
   - pytorch
   - pytorch-cuda=12.4
   - torchvision
+  - toolz
+  - memory_profiler
   - pip:
     - -e ./src/code
