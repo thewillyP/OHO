@@ -102,7 +102,7 @@ def main(args, ifold=0, trial=0, quotient=None, device='cuda', is_cuda=1):  # is
         model = MLP_Drop(num_layers, hdims, args.lr, args.lambda_l2, is_cuda=is_cuda)
         optimizer = optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.lambda_l2)
     elif args.model_type == 'bptt':
-        model = BPTTRNN(28, 30, args.ydim, 28, args.lr, args.lambda_l2, is_cuda=is_cuda)
+        model = BPTTRNN(28, 128, args.ydim, 28, args.lr, args.lambda_l2, is_cuda=is_cuda)
         optimizer = optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.lambda_l2)
     else:
         model = MLP(num_layers, hdims, args.lr, args.lambda_l2, is_cuda=is_cuda)
@@ -291,7 +291,6 @@ def feval(data, target, model, optimizer, mode='eval', is_cuda=0, opt_type='sgd'
     if 'train' in mode:
         loss.backward()  # check how getting bacthed, try gigureout out how gradient modificat
 
-        print(flatten_array(get_grads(model.parameters(), is_cuda)).data)
 
         for i,param in enumerate(model.parameters()):
             if opt_type == 'sgld':
@@ -333,8 +332,6 @@ def meta_update(args, data_vl, target_vl, data_tr, target_tr, model, optimizer, 
 
     #Compute angle between tr and vl grad
     grad = flatten_array(get_grads(model.parameters(), is_cuda)).data
-    print("hi",grad)
-    quit()
     
     param = flatten_array(model.parameters())#.data.cpu().numpy()
     model.grad_norm = norm(grad)

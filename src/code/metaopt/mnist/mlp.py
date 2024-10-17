@@ -19,10 +19,10 @@ class BPTTRNN(nn.Module):
     def __init__(self, n_in: int, n_h: int, n_out: int, sequence_length: int, lr_init, lambda_l2, is_cuda=0):
         super(BPTTRNN, self).__init__()
 
-        self.rnn = nn.RNN(n_in, n_h, 1, batch_first=True, nonlinearity='tanh')  # sampels weights from uniform which is pretty big
+        self.rnn = nn.RNN(n_in, n_h, 2, batch_first=True, nonlinearity='tanh')  # sampels weights from uniform which is pretty big
         self.fc = nn.Linear(n_h, n_out)
 
-        self.initH = lambda x: torch.zeros(1, x.size(0), n_h).to('cpu' if is_cuda==0 else 'gpu') 
+        self.initH = lambda x: torch.zeros(2, x.size(0), n_h).to('cpu' if is_cuda==0 else 'gpu') 
         self.reshapeImage = lambda images: images.view(-1, sequence_length, n_in).to('cpu' if is_cuda==0 else 'gpu')
 
 
