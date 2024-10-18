@@ -11,7 +11,7 @@ from torch.utils.data import TensorDataset, DataLoader
 @curry
 def createUnitSignal(startTime: float, duration: float) -> Callable[[float], float]:
     def test(t):
-        return 1.0 * float(0 <= t - startTime <= duration) 
+        return ((0 <= t - startTime) & (t - startTime <= duration)) 
     return test
     # return lambda t: 1.0 * (0 <= t - startTime <= duration) 
 
