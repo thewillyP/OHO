@@ -16,14 +16,14 @@ from metaopt.util import *
 
 class BPTTRNN(nn.Module):
 
-    def __init__(self, n_in: int, n_h: int, n_out: int, sequence_length: int, lr_init, lambda_l2, is_cuda=0):
+    def __init__(self, n_in: int, n_h: int, n_out: int, lr_init, lambda_l2, is_cuda=0):
         super(BPTTRNN, self).__init__()
 
-        self.rnn = nn.RNN(n_in, n_h, 2, batch_first=True, nonlinearity='tanh')  # sampels weights from uniform which is pretty big
+        self.rnn = nn.RNN(n_in, n_h, 1, batch_first=True, nonlinearity='tanh')  # sampels weights from uniform which is pretty big
         self.fc = nn.Linear(n_h, n_out)
 
-        self.initH = lambda x: torch.zeros(2, x.size(0), n_h).to('cpu' if is_cuda==0 else 'gpu') 
-        self.reshapeImage = lambda images: images.view(-1, sequence_length, n_in).to('cpu' if is_cuda==0 else 'gpu')
+        self.initH = lambda x: torch.zeros(1, x.size(0), n_h).to('cpu' if is_cuda==0 else 'gpu') 
+        # self.reshapeImage = lambda images: images.view(-1, sequence_length, n_in).to('cpu' if is_cuda==0 else 'gpu')
 
 
         param_sizes = [p.numel() for p in self.parameters()]
@@ -51,15 +51,22 @@ class BPTTRNN(nn.Module):
             self.dFdl2 = self.dFdl2.cuda()
 
     def forward(self, x, logsoftmaxF=1):
-        x = self.reshapeImage(x)
+        # x = self.reshapeImage(x)
+        # print(x)
+        # print(x.shape)
+        # quit()
         h0 = self.initH(x)
         x, _ = self.rnn(x, h0)
-        x = x[:, -1, :]
+        # x = x[:, -1, :]
         x = self.fc(x)
-        if logsoftmaxF:
-            return F.log_softmax(x, dim=1)
-        else:
-            return F.softmax(x, dim=1)
+        return x
+        # if logsoftmaxF:
+        #     print(x)
+        #     print(F.log_softmax(x, dim=2))
+        #     quit()
+        #     return F.log_softmax(x, dim=2)
+        # else:
+        #     return F.softmax(x, dim=2)
 
     def update_dFdlr(self, Hv, param, grad, is_cuda=0, opt_type='sgd', noise=None, N=50000):
 

@@ -15,4 +15,7 @@
         "njqdev.vscode-python-typehint",
         "oderwat.indent-rainbow"
     ],
+    "python.analysis.extraPaths": [
+        "./src/code/metaopt/mnist"
+    ],
 }

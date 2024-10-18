@@ -1,3 +1,5 @@
+#%%
+
 import os, sys, math, argparse, time
 import torch
 import torch.optim as optim
@@ -16,6 +18,7 @@ import pickle
 from mlp import * 
 from metaopt.util import *
 from metaopt.util_ml import *
+from delayed_add_task import *
 
 TRAIN=0
 VALID=1
@@ -31,34 +34,34 @@ def parse_args():  # IO
     parser = argparse.ArgumentParser(description=desc)
 
 
-    parser.add_argument('--dataset', type=str, default='mnist', choices=['mnist', 'fmnist'],
-                        help='The name of dataset')
-    parser.add_argument('--num_epoch', type=int, default=100, help='The number of epochs to run')
-    parser.add_argument('--batch_size', type=int, default=100, help='The size of batch')
-    parser.add_argument('--batch_size_vl', type=int, default=100, help='The size of validation batch')
-    parser.add_argument('--result_dir', type=str, default='results',
-                        help='Directory name to save the generated images')
-    parser.add_argument('--log_dir', type=str, default='logs',
-                        help='Directory name to save training logs')
-    parser.add_argument('--model_type', type=str, default='mlp',help="'mlp' | 'amlp'")
-    parser.add_argument('--opt_type', type=str, default='sgd', help="'sgd' | 'sgld'")
-    parser.add_argument('--xdim', type=float, default=784)
-    parser.add_argument('--hdim', type=float, default=128)
-    parser.add_argument('--ydim', type=float, default=10)
-    parser.add_argument('--num_hlayers', type=int, default=3)
-    parser.add_argument('--lr', type=float, default=1e-3)
-    parser.add_argument('--mlr', type=float, default=1e-4)
-    parser.add_argument('--lambda_l1', type=float, default=1e-4)
-    parser.add_argument('--lambda_l2', type=float, default=1e-4)
-    parser.add_argument('--update_freq', type=int, default=1)
-    parser.add_argument('--reset_freq', type=int, default=-0)
-    parser.add_argument('--beta1', type=float, default=0.9)
-    parser.add_argument('--beta2', type=float, default=0.999)
-    parser.add_argument('--valid_size', type=int, default=10000)
-    parser.add_argument('--checkpoint_freq', type=int, default=10)
-    parser.add_argument('--is_cuda', type=int, default=0)
-    parser.add_argument('--save', type=int, default=0)
-    parser.add_argument('--save_dir', type=str, default='/scratch/ji641/imj/')
+    # parser.add_argument('--dataset', type=str, default='mnist', choices=['mnist', 'fmnist'],
+    #                     help='The name of dataset')
+    # parser.add_argument('--num_epoch', type=int, default=100, help='The number of epochs to run')
+    # parser.add_argument('--batch_size', type=int, default=100, help='The size of batch')
+    # parser.add_argument('--batch_size_vl', type=int, default=100, help='The size of validation batch')
+    # parser.add_argument('--result_dir', type=str, default='results',
+    #                     help='Directory name to save the generated images')
+    # parser.add_argument('--log_dir', type=str, default='logs',
+    #                     help='Directory name to save training logs')
+    # parser.add_argument('--model_type', type=str, default='mlp',help="'mlp' | 'amlp'")
+    # parser.add_argument('--opt_type', type=str, default='sgd', help="'sgd' | 'sgld'")
+    # parser.add_argument('--xdim', type=float, default=784)
+    # parser.add_argument('--hdim', type=float, default=128)
+    # parser.add_argument('--ydim', type=float, default=10)
+    # parser.add_argument('--num_hlayers', type=int, default=3)
+    # parser.add_argument('--lr', type=float, default=1e-3)
+    # parser.add_argument('--mlr', type=float, default=1e-4)
+    # parser.add_argument('--lambda_l1', type=float, default=1e-4)
+    # parser.add_argument('--lambda_l2', type=float, default=1e-4)
+    # parser.add_argument('--update_freq', type=int, default=1)
+    # parser.add_argument('--reset_freq', type=int, default=-0)
+    # parser.add_argument('--beta1', type=float, default=0.9)
+    # parser.add_argument('--beta2', type=float, default=0.999)
+    # parser.add_argument('--valid_size', type=int, default=10000)
+    # parser.add_argument('--checkpoint_freq', type=int, default=10)
+    # parser.add_argument('--is_cuda', type=int, default=0)
+    # parser.add_argument('--save', type=int, default=0)
+    # parser.add_argument('--save_dir', type=str, default='/scratch/ji641/imj/')
 
     return check_args(parser.parse_args())
 
@@ -84,14 +87,88 @@ def load_mnist(args):
     dataset = [data_loader_tr, data_loader_vl, data_loader_te]
     return dataset
 
+def load_sinadder(args):
+    t1: float = 0.05
+    t2: float = 0.02
+    seq_length = 200
+    ts = torch.linspace(0, 2, seq_length)
+    num_examples = 1000
+
+    def randomSineWaveIO():
+        amplitude = RNG.uniform(-1, 1)  # Random amplitude between 0.5 and 2
+        frequency = RNG.uniform(0, 1)   # Random frequency between 1 and 10 Hz
+        phase_shift = RNG.uniform(0, 2 * np.pi)
+        bias = RNG.uniform(-1, 1)
+        sine_wave = lambda t: amplitude * torch.sin(frequency * t + phase_shift) + bias
+        return sine_wave
+
+    def randomSineExampleIO(t1: float, t2: float):
+        x1 = randomSineWaveIO()
+        x2 = randomSineWaveIO()
+        y = createDelayedAdder(t1, t2, x1, x2)
+        return x1, x2, y
+
+    genRndomSineExampleIO = lambda: randomSineExampleIO(t1, t2)
+
+    # if os.path.exists('tensors.pth'):
+    #     # Load saved tensors
+    #     loaded_tensors = torch.load('tensors.pth')
+    #     xs_train = loaded_tensors['xs_train']
+    #     ys_train = loaded_tensors['ys_train']
+    #     xs_vl = loaded_tensors['xs_vl']
+    #     ys_vl = loaded_tensors['ys_vl']
+    #     xs_test = loaded_tensors['xs_test']
+    #     ys_test = loaded_tensors['ys_test']
+    # else:
+    #     xs_train, ys_train = createExamplesIO(num_examples, ts, genRndomSineExampleIO)
+    #     xs_vl, ys_vl = createExamplesIO(num_examples-4000, ts, genRndomSineExampleIO)
+    #     xs_test, ys_test = createExamplesIO(num_examples-4000, ts, genRndomSineExampleIO)
+
+    #     torch.save({'xs_train': xs_train, 
+    #                 'ys_train': ys_train,
+    #                 'xs_vl': xs_vl, 
+    #                 'ys_vl': ys_vl,
+    #                 'xs_test': xs_test, 
+    #                 'ys_test': ys_test
+    #                 }, 'tensors.pth')
+    xs_train, ys_train = createExamplesIO(num_examples, ts, genRndomSineExampleIO)
+    xs_vl, ys_vl = createExamplesIO(num_examples-600, ts, genRndomSineExampleIO)
+    xs_test, ys_test = createExamplesIO(num_examples-600, ts, genRndomSineExampleIO)
+
+
+    ts_broadcasted = ts.view(1, seq_length, 1).expand(num_examples, seq_length, 1)
+    ts_broadcasted1 = ts.view(1, seq_length, 1).expand(num_examples-600, seq_length, 1)
+    ts_broadcasted2 = ts.view(1, seq_length, 1).expand(num_examples-600, seq_length, 1)
+
+    ys_train[ts_broadcasted <= max(t1, t2)] = 0
+    ys_vl[ts_broadcasted1 <= max(t1, t2)] = 0
+    ys_test[ts_broadcasted2 <= max(t1, t2)] = 0
+    
+    dataset_train = TensorDataset(xs_train, ys_train)
+    dataset_vl = TensorDataset(xs_vl, ys_vl)
+    dataset_test = TensorDataset(xs_test, ys_test)
+
+    data_loader_tr = DataLoader(dataset_train, batch_size=args.batch_size, shuffle=True)
+    data_loader_vl = DataLoader(dataset_vl, batch_size=args.batch_size, shuffle=True)
+    data_loader_te = DataLoader(dataset_test, batch_size=args.batch_size, shuffle=True)
+
+    data_loader_vl = cycle(data_loader_vl)
+    dataset = [data_loader_tr, data_loader_vl, data_loader_te]
+    return dataset
+
+
+
+
 
 def main(args, ifold=0, trial=0, quotient=None, device='cuda', is_cuda=1):  # iscuda not even used
 
-    dataset = load_mnist(args)
+    # dataset = load_mnist(args)
+    dataset = load_sinadder(args)
 
     ## Initialize Model and Optimizer
-    hdims = [args.xdim] + [args.hdim]*args.num_hlayers + [args.ydim]
-    num_layers = args.num_hlayers + 2
+    # hdims = [args.xdim] + [args.hdim]*args.num_hlayers + [args.ydim]
+    hdims = []
+    num_layers = 0  # args.num_hlayers + 2
     if args.model_type == 'amlp':
         model = AMLP(num_layers, hdims, args.lr, args.lambda_l2, is_cuda=is_cuda)
         optimizer = SGD_Multi_LR(model.parameters(), lr=args.lr, weight_decay=args.lambda_l2)
@@ -102,7 +179,7 @@ def main(args, ifold=0, trial=0, quotient=None, device='cuda', is_cuda=1):  # is
         model = MLP_Drop(num_layers, hdims, args.lr, args.lambda_l2, is_cuda=is_cuda)
         optimizer = optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.lambda_l2)
     elif args.model_type == 'bptt':
-        model = BPTTRNN(28, 128, args.ydim, 28, args.lr, args.lambda_l2, is_cuda=is_cuda)
+        model = BPTTRNN(2, 128, 1, args.lr, args.lambda_l2, is_cuda=is_cuda)
         optimizer = optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.lambda_l2)
     else:
         model = MLP(num_layers, hdims, args.lr, args.lambda_l2, is_cuda=is_cuda)
@@ -132,28 +209,31 @@ def main(args, ifold=0, trial=0, quotient=None, device='cuda', is_cuda=1):  # is
                                 tr_corr_mean_list, tr_corr_std_list \
                                 = train(args, dataset, model, optimizer, is_cuda=is_cuda)
 
-    if args.save:
-        os.makedirs(fdir, exist_ok=True)
-        np.save(fdir+'Wn', Wn_list)
-        np.save(fdir+'lr', lr_list)
-        np.save(fdir+'l2', l2_list)
-        np.save(fdir+'gang_list', gang_list)
-        np.save(fdir+'dFdlr_list', dFdlr_list)
-        np.save(fdir+'dFdl2_list', dFdl2_list)
-        np.save(fdir+'tr_epoch', tr_epoch)
-        np.save(fdir+'vl_epoch', vl_epoch)
-        np.save(fdir+'te_epoch', te_epoch)
-        np.save(fdir+'tr_loss', tr_loss_list)
-        np.save(fdir+'vl_loss', vl_loss_list)
-        np.save(fdir+'te_loss', te_loss_list)
-        np.save(fdir+'tr_acc', tr_acc_list)
-        np.save(fdir+'te_acc', te_acc_list)
-        np.save(fdir+'tr_grad_corr_mean', tr_corr_mean_list)
-        np.save(fdir+'tr_grad_corr_std', tr_corr_std_list)
+    # if args.save:
+    #     os.makedirs(fdir, exist_ok=True)
+    #     np.save(fdir+'Wn', Wn_list)
+    #     np.save(fdir+'lr', lr_list)
+    #     np.save(fdir+'l2', l2_list)
+    #     np.save(fdir+'gang_list', gang_list)
+    #     np.save(fdir+'dFdlr_list', dFdlr_list)
+    #     np.save(fdir+'dFdl2_list', dFdl2_list)
+    #     np.save(fdir+'tr_epoch', tr_epoch)
+    #     np.save(fdir+'vl_epoch', vl_epoch)
+    #     np.save(fdir+'te_epoch', te_epoch)
+    #     np.save(fdir+'tr_loss', tr_loss_list)
+    #     np.save(fdir+'vl_loss', vl_loss_list)
+    #     np.save(fdir+'te_loss', te_loss_list)
+    #     np.save(fdir+'tr_acc', tr_acc_list)
+    #     np.save(fdir+'te_acc', te_acc_list)
+    #     np.save(fdir+'tr_grad_corr_mean', tr_corr_mean_list)
+    #     np.save(fdir+'tr_grad_corr_std', tr_corr_std_list)
 
     print('Final test loss %f' % te_loss_list[-1])
     print(type(te_loss_list[-1]))
-    return te_loss_list[-1]
+
+    
+
+    return model
 
 
 def train(args, dataset, model, optimizer, saveF=0, is_cuda=1):
@@ -223,9 +303,9 @@ def train(args, dataset, model, optimizer, saveF=0, is_cuda=1):
         if epoch == 0: print('Single epoch timing %f' % ((end_time-start_time) / 60))
 
 
-        if epoch % args.checkpoint_freq == 0:
-            os.makedirs(args.fdir+ '/checkpoint/', exist_ok=True)
-            save(model, args.fdir+ '/checkpoint/epoch%d' % epoch) 
+        # if epoch % args.checkpoint_freq == 0:
+        #     os.makedirs(args.fdir+ '/checkpoint/', exist_ok=True)
+        #     save(model, args.fdir+ '/checkpoint/epoch%d' % epoch) 
 
 
         fprint = 'Train Epoch: %d, Tr Loss %f Vl loss %f Acc %f Eta %s, L2 %s, |dFdlr| %.2f |dFdl2| %.2f |G| %.4f |G_vl| %.4f Gang %.3f |W| %.2f, Grad Corr %f %f'
@@ -282,9 +362,10 @@ def feval(data, target, model, optimizer, mode='eval', is_cuda=0, opt_type='sgd'
         output = model(data)
             
     # Compute Loss
-    loss = F.nll_loss(output, target)
-    pred = output.argmax(dim=1, keepdim=True).flatten()  # get the index of the max log-probability
-    accuracy = pred.eq(target).float().mean()
+    loss = F.mse_loss(output, target)
+    accuracy = torch.sqrt(loss)
+    # pred = output.argmax(dim=1, keepdim=True).flatten()  # get the index of the max log-probability
+    # accuracy = pred.eq(target).float().mean()
 
     grad_vec = []
     noise = None
@@ -322,10 +403,10 @@ def meta_update(args, data_vl, target_vl, data_tr, target_tr, model, optimizer, 
     #Compute Hessian Vector Product
     param_shapes = model.param_shapes
     dFdlr = unflatten_array(model.dFdlr, model.param_cumsum, param_shapes)
-    Hv_lr  = compute_HessianVectorProd(model, dFdlr, data_tr, target_tr, is_cuda=is_cuda)
+    Hv_lr  = compute_HessianVectorProd_MSE(model, dFdlr, data_tr, target_tr, is_cuda=is_cuda)
 
     dFdl2 = unflatten_array(model.dFdl2, model.param_cumsum, param_shapes)
-    Hv_l2  = compute_HessianVectorProd(model, dFdl2, data_tr, target_tr, is_cuda=is_cuda)
+    Hv_l2  = compute_HessianVectorProd_MSE(model, dFdl2, data_tr, target_tr, is_cuda=is_cuda)
 
     model, loss_valid, grad_valid = get_grad_valid(model, data_vl, target_vl, is_cuda)
     #model, loss_valid, grad_valid = get_grad_valid(model, data_tr, target_tr, is_cuda)
@@ -358,7 +439,7 @@ def get_grad_valid(model, data, target, is_cuda):
     val_model.train()
        
     output = val_model(data)
-    loss = F.nll_loss(output, target)
+    loss = F.mse_loss(output, target)
     loss.backward()
     grads = get_grads(val_model.parameters(), is_cuda)
     model.grad_norm_vl = norm(flatten_array(grads))
@@ -376,9 +457,61 @@ def update_optimizer_hyperparams(args, model, optimizer):
 
 if __name__ == '__main__':
 
-    args = parse_args()
+    # args = parse_args()
+    class Arg:
+        pass 
+    args = Arg()
+    args.is_cuda = 0
+    args.mlr = 0.00001
+    args.lr = 0.001
+    args.lambda_l2 = 0.
+    args.opt_type = "sgd"
+    args.update_freq = 1
+    args.save = 1
+    args.model_type = 'bptt'
+    args.num_epoch = 100
+    args.save_dir = "results"
+    args.batch_size = 100
+    args.reset_freq = 0 
+    args.batch_size_vl = 1
+
     is_cuda = args.is_cuda
-    main(args, ifold=ifold, is_cuda=is_cuda)
+    model = main(args, ifold=ifold, is_cuda=is_cuda)
+
+    # %%
+
+    def plotIO(model):
+        t1: float = 0.05
+        t2: float = 0.02
+        seq_length = 200
+        ts = torch.linspace(0, 2, seq_length)
+
+        def randomSineWaveIO():
+            amplitude = RNG.uniform(-1, 1)  # Random amplitude between 0.5 and 2
+            frequency = RNG.uniform(0, 1)   # Random frequency between 1 and 10 Hz
+            phase_shift = RNG.uniform(0, 2 * np.pi)
+            bias = RNG.uniform(-1, 1)
+            sine_wave = lambda t: amplitude * torch.sin(frequency * t + phase_shift) + bias
+            return sine_wave
+
+        def randomSineExampleIO(t1: float, t2: float):
+            x1 = randomSineWaveIO()
+            x2 = randomSineWaveIO()
+            y = createDelayedAdder(t1, t2, x1, x2)
+            return x1, x2, y
+
+        genRndomSineExampleIO = lambda: randomSineExampleIO(t1, t2)
+        x1, x2, y = genRndomSineExampleIO()
+        xs, ys = createExamples(ts, x1, x2, y)
+        ys[ts <= max(t1, t2)] = 0
+        predicts = model(xs.unsqueeze(0))
+        print(predicts.shape, ys.shape)
+        plt.plot(ts.detach().numpy(), ys.flatten().detach().numpy(), ts.detach().numpy(), predicts.flatten().detach().numpy())
+        plt.show()
+
+    plotIO(model)
 
 
 
+
+# %%

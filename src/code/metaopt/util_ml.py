@@ -13,6 +13,69 @@ from metaopt.util import *
 #torch.manual_seed(3)
 
 
+def compute_HessianVectorProd_MSE(model, dFdS, data, target, is_cuda=0, logosftmax=1):
+
+    eps_machine = np.finfo(data.data.cpu().numpy().dtype).eps
+
+    ## Compute Hessian Vector product h
+    vmax_x, vmax_d = 0, 0
+    model_plus = deepcopy(model)
+    for param, direction in zip(model_plus.parameters(), dFdS):
+        vmax_x = np.maximum(vmax_x, torch.max(torch.abs(param)).item())
+        vmax_d = np.maximum(vmax_d, torch.max(abs(direction)).item())
+        break
+
+    if vmax_d ==0: vmax_d = 1
+    Hess_est_r = np.sqrt(eps_machine) * (1+vmax_x) / vmax_d
+    Hess_est_r = max([ Hess_est_r, 0.001])
+    for param, direction in zip(model_plus.parameters(), dFdS):
+        perturbation =  Hess_est_r * direction
+        if is_cuda: perturbation = perturbation.cuda()
+        param.data.add_(perturbation)
+
+    for p in model_plus.parameters():
+         #print(p.data[0][0])
+         break
+
+    model_plus.train()
+    output = model_plus(data)
+    loss = F.mse_loss(output, target)
+    loss.backward()
+
+    model_minus = deepcopy(model)
+    for p in model_minus.parameters():
+         #print(p.data[0][0])
+         break
+    
+    for param, direction in zip(model_minus.parameters(), dFdS):
+        perturbation =  Hess_est_r * direction
+        if is_cuda: perturbation = perturbation.cuda()
+        param.data.add_(-perturbation)
+
+    for p in model_minus.parameters():
+         #print(p.data[0][0])
+         break
+    
+    model_minus.train()
+    output = model_minus(data)
+    loss = F.mse_loss(output, target)
+    loss.backward()
+
+   
+    for p in model.parameters():
+         #print(p.data[0][0])
+         break
+    
+    g_plus  = [p.grad.data for p in model_plus.parameters()]
+    g_minus = [p.grad.data for p in model_minus.parameters()]
+    Hv = (flatten_array(g_plus) -
+         flatten_array(g_minus)) / (2 * Hess_est_r)
+
+    #import pdb; pdb.set_trace()
+    return Hv 
+
+
+
 def compute_HessianVectorProd(model, dFdS, data, target, is_cuda=0, logosftmax=1):
 
     eps_machine = np.finfo(data.data.cpu().numpy().dtype).eps
