@@ -66,6 +66,20 @@ def createExamplesIO(numExamples, ts, randomFnsIO):
     return X_batch, Y_batch
 
 
+def createExamplesIO2(numExamples, ts, createExamplesIO):
+    X_batch = []
+    Y_batch = []
+    
+    for _ in range(numExamples):
+        X, Y = createExamplesIO(ts)
+        X_batch.append(X)
+        Y_batch.append(Y)
+    
+    X_batch = torch.stack(X_batch, dim=0)
+    Y_batch = torch.stack(Y_batch, dim=0).unsqueeze(-1)
+    
+    return X_batch, Y_batch
+
 #%%
 
 

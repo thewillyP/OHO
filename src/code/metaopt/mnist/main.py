@@ -20,6 +20,32 @@ from metaopt.util import *
 from metaopt.util_ml import *
 from delayed_add_task import *
 
+# tsss = torch.arange(11)
+# t1 = 2 
+# t2 = 2
+
+# def generate_random_lists(ts):
+#     #` Generate random lists for x1(t) and x2(t)
+#     T = len(ts)
+#     x1 = torch.randn(T)  # Random values for x1
+#     x2 = torch.randn(T)  # Random values for x2
+    
+#     # Initialize y(t) with zeros
+#     y = torch.zeros(T)
+    
+#     # Calculate y(t) = x1(t - t1) + x2(t - t2)
+#     for t in ts:
+#         if t >= max(t1, t2):
+#             y[t] = x1[t - t1] + x2[t - t2]
+    
+#     return torch.stack([x1, x2], dim=1), y
+
+# xs, ys = generate_random_lists(tsss)
+# print(xs)
+# print(ys)
+
+
+
 TRAIN=0
 VALID=1
 TEST =2
@@ -88,11 +114,18 @@ def load_mnist(args):
     return dataset
 
 def load_sinadder(args):
-    t1: float = 0.01
-    t2: float = 0.01
-    seq_length = 200
-    ts = torch.linspace(0, 2, seq_length)
-    num_examples = 5000
+    # t1: float = 0.01
+    # t2: float = 0.01
+    # seq_length = 200
+    # ts = torch.linspace(0, 2, seq_length)
+    # num_examples = 5000
+
+    t1: int = 1
+    t2: int = 1
+
+    seq_length = 20
+    ts = torch.arange(0, seq_length)
+    num_examples = 1000
 
     def randomSineWaveIO():
         amplitude = RNG.uniform(-1, 1)  # Random amplitude between 0.5 and 2
@@ -159,15 +192,15 @@ def load_sinadder(args):
 
 
 def load_sparse(args):
-    t1: float = 1
-    t2: float = 1
+    t1: float = 5
+    t2: float = 2
     outT: float = 9
 
     seq_length = 10
     ts = torch.arange(0, seq_length)
-    num_examples = 10000
+    num_examples = 1000
 
-    def randomSineExampleIO(t1: float, t2: float):
+    def randomSparseIO(t1: float, t2: float):
         a_ = RNG.uniform(-2, 2)
         b_ = RNG.uniform(-2, 2)
         t1d = 1 #RNG.uniform(0, 2)
@@ -175,20 +208,45 @@ def load_sparse(args):
         x1, x2, y = createAddMemoryTask(t1, t2, a_, b_, t1d, t2d, outT)
         return x1, x2, y
 
+    genRandomSparseIO = lambda: randomSparseIO(t1, t2)
+
+    # xs_train, ys_train = createExamplesIO(num_examples, ts, genRandomSparseIO)
+    xs_vl, ys_vl = createExamplesIO(num_examples, ts, genRandomSparseIO)
+    # xs_test, ys_test = createExamplesIO(num_examples, ts, genRandomSparseIO)
+
+
+    def randomSineWaveIO():
+        amplitude = RNG.uniform(-1, 1)  # Random amplitude between 0.5 and 2
+        frequency = RNG.uniform(0, 20)   # Random frequency between 1 and 10 Hz
+        phase_shift = RNG.uniform(0, 2 * np.pi)
+        bias = RNG.uniform(-1, 1)
+        sine_wave = lambda t: amplitude * torch.sin(frequency * t + phase_shift) + bias
+        return sine_wave
+
+    def randomSineExampleIO(t1: float, t2: float):
+        x1 = randomSineWaveIO()
+        x2 = randomSineWaveIO()
+        y = createDelayedAdder(t1, t2, x1, x2)
+        return x1, x2, y
+
     genRndomSineExampleIO = lambda: randomSineExampleIO(t1, t2)
+    # xs_vl, ys_vl = createExamplesIO(num_examples, ts, genRndomSineExampleIO)
+    # ts_broadcasted1 = ts.view(1, seq_length, 1).expand(num_examples, seq_length, 1)
+    # ys_vl[ts_broadcasted1 <= max(t1, t2)] = 0
 
     xs_train, ys_train = createExamplesIO(num_examples, ts, genRndomSineExampleIO)
-    xs_vl, ys_vl = createExamplesIO(num_examples, ts, genRndomSineExampleIO)
+    # xs_vl, ys_vl = createExamplesIO(num_examples-600, ts, genRndomSineExampleIO)
     xs_test, ys_test = createExamplesIO(num_examples, ts, genRndomSineExampleIO)
 
 
-    # ts_broadcasted = ts.view(1, seq_length, 1).expand(num_examples, seq_length, 1)
-    # ts_broadcasted1 = ts.view(1, seq_length, 1).expand(num_examples-600, seq_length, 1)
-    # ts_broadcasted2 = ts.view(1, seq_length, 1).expand(num_examples-600, seq_length, 1)
+    ts_broadcasted = ts.view(1, seq_length, 1).expand(num_examples, seq_length, 1)
+    # ts_broadcasted1 = ts.view(1, seq_length, 1).expand(num_examples, seq_length, 1)
+    ts_broadcasted2 = ts.view(1, seq_length, 1).expand(num_examples, seq_length, 1)
 
-    # ys_train[ts_broadcasted <= max(t1, t2)] = 0
+    ys_train[ts_broadcasted <= max(t1, t2)] = 0
     # ys_vl[ts_broadcasted1 <= max(t1, t2)] = 0
-    # ys_test[ts_broadcasted2 <= max(t1, t2)] = 0
+    ys_test[ts_broadcasted2 <= max(t1, t2)] = 0
+
     
     dataset_train = TensorDataset(xs_train, ys_train)
     dataset_vl = TensorDataset(xs_vl, ys_vl)
@@ -203,11 +261,54 @@ def load_sparse(args):
     return dataset
 
 
+def load_random(args):
+    t1: int = 1
+    t2: int = 1
+
+    seq_length = 10
+    ts = torch.arange(0, seq_length)
+    num_examples = 1000
+
+    def generate_random_lists(ts):
+        #` Generate random lists for x1(t) and x2(t)
+        T = len(ts)
+        x1 = RNG.randn(T)  # Random values for x1
+        x2 = RNG.randn(T)  # Random values for x2
+        x1 = torch.from_numpy(x1).to(torch.float32)
+        x2 = torch.from_numpy(x2).to(torch.float32)
+        
+        # Initialize y(t) with zeros
+        y = torch.zeros(T).to(torch.float32)
+        
+        # Calculate y(t) = x1(t - t1) + x2(t - t2)
+        for t in ts:
+            if t >= max(t1, t2):
+                y[t] = x1[t - t1] + x2[t - t2]
+        
+        return torch.stack([x1, x2], dim=1), y
+
+    xs_train, ys_train = createExamplesIO2(num_examples, ts, generate_random_lists)
+    xs_vl, ys_vl = createExamplesIO2(num_examples, ts, generate_random_lists)
+    xs_test, ys_test = createExamplesIO2(num_examples, ts, generate_random_lists)
+
+    
+    dataset_train = TensorDataset(xs_train, ys_train)
+    dataset_vl = TensorDataset(xs_vl, ys_vl)
+    dataset_test = TensorDataset(xs_test, ys_test)
+
+    data_loader_tr = DataLoader(dataset_train, batch_size=args.batch_size, shuffle=True)
+    data_loader_vl = DataLoader(dataset_vl, batch_size=args.batch_size, shuffle=True)
+    data_loader_te = DataLoader(dataset_test, batch_size=args.batch_size, shuffle=True)
+
+    data_loader_vl = cycle(data_loader_vl)
+    dataset = [data_loader_tr, data_loader_vl, data_loader_te]
+    return dataset
+
 
 def main(args, ifold=0, trial=0, quotient=None, device='cuda', is_cuda=1):  # iscuda not even used
 
     # dataset = load_mnist(args)
-    dataset = load_sparse(args)
+    dataset = load_sinadder(args)
 
     ## Initialize Model and Optimizer
     # hdims = [args.xdim] + [args.hdim]*args.num_hlayers + [args.ydim]
@@ -223,7 +324,7 @@ def main(args, ifold=0, trial=0, quotient=None, device='cuda', is_cuda=1):  # is
         model = MLP_Drop(num_layers, hdims, args.lr, args.lambda_l2, is_cuda=is_cuda)
         optimizer = optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.lambda_l2)
     elif args.model_type == 'bptt':
-        model = BPTTRNN(2, 30, 1, args.lr, args.lambda_l2, is_cuda=is_cuda)
+        model = BPTTRNN(2, 200, 1, args.lr, args.lambda_l2, is_cuda=is_cuda)
         optimizer = optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.lambda_l2)
     else:
         model = MLP(num_layers, hdims, args.lr, args.lambda_l2, is_cuda=is_cuda)
@@ -353,6 +454,10 @@ def train(args, dataset, model, optimizer, saveF=0, is_cuda=1):
 
 
         fprint = 'Train Epoch: %d, Tr Loss %f Vl loss %f Acc %f Eta %s, L2 %s, |dFdlr| %.2f |dFdl2| %.2f |G| %.4f |G_vl| %.4f Gang %.3f |W| %.2f, Grad Corr %f %f'
+        if np.isnan(np.mean(tr_loss_list[-100:])):
+                print('STOP')
+                print(tr_loss_list[-100:])
+                return
         print(fprint % (epoch, np.mean(tr_loss_list[-100:]), \
                         np.mean(vl_loss_list[-100:]), \
                         np.mean(tr_acc_list[-100:]), \
@@ -507,13 +612,13 @@ if __name__ == '__main__':
     args = Arg()
     args.is_cuda = 0
     args.mlr = 0.00001
-    args.lr = 0.01
+    args.lr = 0.001
     args.lambda_l2 = 0.
     args.opt_type = "sgd"
     args.update_freq = 1
     args.save = 1
     args.model_type = 'bptt'
-    args.num_epoch = 100
+    args.num_epoch = 200
     args.save_dir = "results"
     args.batch_size = 100
     args.reset_freq = 0 
@@ -525,13 +630,13 @@ if __name__ == '__main__':
     # %%
 
     def plotIO1(model):
-        t1: float = 3 * (2/13)
-        t2: float = 2 * (2/13)
-        seq_length = 200
-        ts = torch.linspace(0, 2, 13)
+        t1: int = 1
+        t2: int = 1
+        seq_length = 20
+        ts = torch.arange(0, seq_length)
 
         def randomSineWaveIO():
-            amplitude = RNG.uniform(-10, 10)  # Random amplitude between 0.5 and 2
+            amplitude = RNG.uniform(-1, 1)  # Random amplitude between 0.5 and 2
             frequency = RNG.uniform(0, 20)   # Random frequency between 1 and 10 Hz
             phase_shift = RNG.uniform(0, 2 * np.pi)
             bias = RNG.uniform(-1, 1)
@@ -555,8 +660,8 @@ if __name__ == '__main__':
     
     def plotIO2(model):
 
-        t1: float = 1
-        t2: float = 1
+        t1: float = 5
+        t2: float = 2
         outT: float = 9
 
         seq_length = 10
@@ -578,8 +683,40 @@ if __name__ == '__main__':
         print(predicts.shape, ys.shape)
         plt.plot(ts.detach().numpy(), ys.flatten().detach().numpy(), ts.detach().numpy(), predicts.flatten().detach().numpy())
         plt.show()
+    
+    def plotIO3(model):
 
-    plotIO2(model)
+        t1: float = 1
+        t2: float = 1
+        outT: float = 9
+
+        seq_length = 10
+        ts = torch.arange(0, seq_length)
+
+        def generate_random_lists(ts):
+            #` Generate random lists for x1(t) and x2(t)
+            T = len(ts)
+            x1 = RNG.randn(T)  # Random values for x1
+            x2 = RNG.randn(T)  # Random values for x2
+            x1 = torch.from_numpy(x1).to(torch.float32)
+            x2 = torch.from_numpy(x2).to(torch.float32)
+            
+            # Initialize y(t) with zeros
+            y = torch.zeros(T).to(torch.float32)
+            
+            # Calculate y(t) = x1(t - t1) + x2(t - t2)
+            for t in ts:
+                if t >= max(t1, t2):
+                    y[t] = x1[t - t1] + x2[t - t2]
+            
+            return torch.stack([x1, x2], dim=1), y
+
+        xs, ys = generate_random_lists(ts)
+        predicts = model(xs.unsqueeze(0))
+        plt.plot(ts.detach().numpy(), ys.flatten().detach().numpy(), ts.detach().numpy(), predicts.flatten().detach().numpy())
+        plt.show()
+
+    plotIO1(model)
 
 
 
@@ -587,3 +724,13 @@ if __name__ == '__main__':
 # %%
 
 
+"""
+1. test on no meta t1=8,t2=3: works decent. Not much diff between meta and vanilla
+2. test on t1=5, t2=2: works same as well
+3. test where train on sparse but valid on sin: works bad
+4. don't clamp leanring rate?: Doesn't make sense. learning rate should be positive
+5. t1=49,t2=27
+6. train on randomly generated data
+7. test on sinaddr to see if i get exploding gradients?
+
+"""

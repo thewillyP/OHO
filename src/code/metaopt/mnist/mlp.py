@@ -14,6 +14,10 @@ from metaopt.util import *
 
 
 
+
+
+
+
 class BPTTRNN(nn.Module):
 
     def __init__(self, n_in: int, n_h: int, n_out: int, lr_init, lambda_l2, is_cuda=0):
@@ -94,7 +98,10 @@ class BPTTRNN(nn.Module):
 
         val_grad = flatten_array(val_grad)
         delta = val_grad.dot(self.dFdlr).data.cpu().numpy()
+        temp =self.eta
         self.eta -= mlr * delta
+        if self.eta < 0:
+            print(temp, self.eta, delta, val_grad, self.dFdlr)
         self.eta = np.maximum(0.0, self.eta)
 
     def update_lambda(self, mlr, val_grad):
