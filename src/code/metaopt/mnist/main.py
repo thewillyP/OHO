@@ -62,6 +62,16 @@ def parse_args():  # IO
     # parser.add_argument('--is_cuda', type=int, default=0)
     # parser.add_argument('--save', type=int, default=0)
     # parser.add_argument('--save_dir', type=str, default='/scratch/ji641/imj/')
+    # parser.add_argument('--task', type=str, default='sin')
+    # parser.add_argument('--t1', type=float, default=1)
+    # parser.add_argument('--t2', type=float, default=1)
+    # parser.add_argument('--outT', type=float, default=10)
+    # parser.add_argument('--seq', type=int, default=10)
+    # parser.add_argument('--numTr', type=int, default=1000)
+    # parser.add_argument('--numVl', type=int, default=1000)
+    # parser.add_argument('--numTe', type=int, default=200)
+    # parser.add_argument('--oho', type=int, default=1)
+    
 
     return check_args(parser.parse_args())
 
@@ -87,24 +97,8 @@ def load_mnist(args):
     dataset = [data_loader_tr, data_loader_vl, data_loader_te]
     return dataset
 
-
-# t1: float = 0.01
-    # t2: float = 0.01
-    # seq_length = 200
-    # ts = torch.linspace(0, 2, seq_length)
-    # num_examples = 5000
-
-    # t1: int = 1
-    # t2: int = 1
-
-    # seq_length = 20
-    # ts = torch.arange(0, seq_length)
-    # num_examples = 1000
-
 def getDataset(loader, numEx_tr: int, numEx_vl: int, numEx_te: int):
     return [loader(numEx_tr), cycle(loader(numEx_vl)), loader(numEx_te)]
-
-# genRndomSineExampleIO = lambda: randomSineExampleIO(t1, t2)
 
 @curry
 def load_adder_task(randomExamplesIO, randomAdderIO, t1: float, t2: float, ts, args, numEx: int):
@@ -122,40 +116,15 @@ def load_random(seq_length, t1, t2):
     ts = torch.arange(0, seq_length)
     return load_adder_task(createExamplesIO2, generate_random_lists, t1, t2, ts)
 
-# def load_random(args):
-#     t1: int = 1
-#     t2: int = 1
-
-#     seq_length = 10
-#     ts = torch.arange(0, seq_length)
-#     num_examples = 1000
-
-    
-
-#     xs_train, ys_train = createExamplesIO2(num_examples, ts, generate_random_lists)
-#     xs_vl, ys_vl = createExamplesIO2(num_examples, ts, generate_random_lists)
-#     xs_test, ys_test = createExamplesIO2(num_examples, ts, generate_random_lists)
-
-    
-#     dataset_train = TensorDataset(xs_train, ys_train)
-#     dataset_vl = TensorDataset(xs_vl, ys_vl)
-#     dataset_test = TensorDataset(xs_test, ys_test)
-
-#     data_loader_tr = DataLoader(dataset_train, batch_size=args.batch_size, shuffle=True)
-#     data_loader_vl = DataLoader(dataset_vl, batch_size=args.batch_size, shuffle=True)
-#     data_loader_te = DataLoader(dataset_test, batch_size=args.batch_size, shuffle=True)
-
-#     data_loader_vl = cycle(data_loader_vl)
-#     dataset = [data_loader_tr, data_loader_vl, data_loader_te]
-#     return dataset
-
-
 def main(args, ifold=0, trial=0, quotient=None, device='cuda', is_cuda=1):  # iscuda not even used
 
-    # dataset = load_mnist(args)
-    # loader = load_sinadder(1, 1, torch.arange(0, 20), args)
-    loader = load_random(20, 1, 1)(args)
-    dataset = getDataset(loader, 1000, 1000, 200) 
+    if args.task == 'sin':
+        loader = load_sinadder(args.t1, args.t2, torch.arange(0, args.seq), args)
+    elif args.task == 'sparse':
+        loader = load_sparse(args.outT)(args.t1, args.t2, torch.arange(0, args.seq), args)
+    else:
+        loader = load_random(args.seq, args.t1, args.t2)(args)
+    dataset = getDataset(loader, args.numTr, args.numVl, args.numTe) 
 
     ## Initialize Model and Optimizer
     # hdims = [args.xdim] + [args.hdim]*args.num_hlayers + [args.ydim]
@@ -171,7 +140,7 @@ def main(args, ifold=0, trial=0, quotient=None, device='cuda', is_cuda=1):  # is
         model = MLP_Drop(num_layers, hdims, args.lr, args.lambda_l2, is_cuda=is_cuda)
         optimizer = optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.lambda_l2)
     elif args.model_type == 'bptt':
-        model = BPTTRNN(2, 400, 1, args.lr, args.lambda_l2, is_cuda=is_cuda)
+        model = BPTTRNN(2, 100, 1, args.lr, args.lambda_l2, is_cuda=is_cuda)
         optimizer = optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.lambda_l2)
     else:
         model = MLP(num_layers, hdims, args.lr, args.lambda_l2, is_cuda=is_cuda)
@@ -221,9 +190,7 @@ def main(args, ifold=0, trial=0, quotient=None, device='cuda', is_cuda=1):  # is
     #     np.save(fdir+'tr_grad_corr_std', tr_corr_std_list)
 
     print('Final test loss %f' % te_loss_list[-1])
-    print(type(te_loss_list[-1]))
-
-    
+    # print(type(te_loss_list[-1]))
 
     return model
 
@@ -241,7 +208,7 @@ def train(args, dataset, model, optimizer, saveF=0, is_cuda=1):
 
     start_time0 = time.time()
     for epoch in range(args.num_epoch+1):
-        if epoch % 10 == 0:
+        if epoch % 1 == 0:
             te_losses, te_accs = [], []
             for batch_idx, (data, target) in enumerate(dataset[TEST]):  # data = (batch, channel=1, 28, 28)
                 data, target = to_torch_variable(data, target, is_cuda, floatTensorF=1)
@@ -255,41 +222,33 @@ def train(args, dataset, model, optimizer, saveF=0, is_cuda=1):
             print('Valid Epoch: %d, Loss %f Acc %f' % 
                 (epoch, np.mean(te_losses), np.mean(te_accs)))
             
-            # for name, param in model.named_parameters():
-            #     print(f"{name} parameter values:\n{param.data}")
-
 
         grad_list = []
         start_time = time.time()
         for batch_idx, (data, target) in enumerate(dataset[TRAIN]):
-
-            # print(data[0])
-            # print(target[0])
-            # quit()
-
             data, target = to_torch_variable(data, target, is_cuda)
             opt_type = args.opt_type
-            #if epoch > args.num_epoch * 0.1 and args.opt_type == 'sgld':
-            #    opt_type = args.opt_type
-            #else:
-            #    opt_type = 'sgd'
-            model, loss, accuracy, output, noise, grad_vec = feval(data, target, model, optimizer, \
-                                is_cuda=is_cuda, mode='meta-train', opt_type=opt_type)
-            tr_epoch.append(counter)
-            tr_loss_list.append(loss)
-            tr_acc_list.append(accuracy)
-            grad_list.append(grad_vec)
+            if epoch > args.num_epoch * 0.1 and args.opt_type == 'sgld':
+                opt_type = args.opt_type
+            else:
+                opt_type = 'sgd'
+                model, loss, accuracy, output, noise, grad_vec = feval(data, target, model, optimizer, \
+                                    is_cuda=is_cuda, mode='meta-train', opt_type=opt_type)
+                tr_epoch.append(counter)
+                tr_loss_list.append(loss)
+                tr_acc_list.append(accuracy)
+                grad_list.append(grad_vec)
 
             if args.reset_freq > 0 and counter % args.reset_freq == 0:
                 model.reset_jacob() 
 
             """ meta update only uses most recent gradient on the update freq. feval resets gradient everytime its called. so meta_update will not use the sum of gradients """
-            # if counter % args.update_freq == 0 and args.mlr != 0.0:
-            #     data_vl, target_vl = next(dataset[VALID])
-            #     data_vl, target_vl = to_torch_variable(data_vl, target_vl, is_cuda)
-            #     model, loss_vl, optimizer = meta_update(args, data_vl, target_vl, data, target, model, optimizer, noise, is_cuda=is_cuda)
-            #     vl_epoch.append(counter)
-            #     vl_loss_list.append(loss_vl.item())
+            if args.oho == 1 and counter % args.update_freq == 0 and args.mlr != 0.0:
+                data_vl, target_vl = next(dataset[VALID])
+                data_vl, target_vl = to_torch_variable(data_vl, target_vl, is_cuda)
+                model, loss_vl, optimizer = meta_update(args, data_vl, target_vl, data, target, model, optimizer, noise, is_cuda=is_cuda)
+                vl_epoch.append(counter)
+                vl_loss_list.append(loss_vl.item())
 
             counter += 1  
         #grad_list = np.asarray(grad_list)   
@@ -300,7 +259,6 @@ def train(args, dataset, model, optimizer, saveF=0, is_cuda=1):
 
         end_time = time.time()
         if epoch == 0: print('Single epoch timing %f' % ((end_time-start_time) / 60))
-
 
         # if epoch % args.checkpoint_freq == 0:
         #     os.makedirs(args.fdir+ '/checkpoint/', exist_ok=True)
@@ -394,13 +352,6 @@ def feval(data, target, model, optimizer, mode='eval', is_cuda=0, opt_type='sgd'
         grad_vec = np.hstack(grad_vec) 
         grad_vec = grad_vec / norm_np(grad_vec)
 
-        # for name, param in model.named_parameters():
-        #     if param.grad is not None:
-        #         print(f"{name} gradient: {param.grad.norm().item()}")  # Norm gives a sense of gradient magnitude
-        #     else:
-        #         print(f"{name} has no gradient.")
-        # quit()
-
     elif 'grad' in mode:
         loss.backward()
     
@@ -479,17 +430,27 @@ if __name__ == '__main__':
     args = Arg()
     args.is_cuda = 0
     args.mlr = 0.00001
-    args.lr = 0.005
+    args.lr = 0.001
     args.lambda_l2 = 0.
     args.opt_type = "sgd"
     args.update_freq = 1
     args.save = 1
     args.model_type = 'bptt'
-    args.num_epoch = 200
+    args.num_epoch = 100
     args.save_dir = "results"
     args.batch_size = 100
     args.reset_freq = 0 
     args.batch_size_vl = 1
+    args.task = 'random'
+    args.t1 = 1
+    args.t2 = 2
+    args.outT = 9
+    args.seq = 20
+    args.oho = 0
+    args.numTr = 1000
+    args.numVl = 1000
+    args.numTe = 200
+
 
     is_cuda = args.is_cuda
     model = main(args, ifold=ifold, is_cuda=is_cuda)
@@ -525,6 +486,7 @@ if __name__ == '__main__':
         print(predicts.shape, ys.shape)
         plt.plot(ts.detach().numpy(), ys.flatten().detach().numpy(), ts.detach().numpy(), predicts.flatten().detach().numpy())
         plt.show()
+        # plt.savefig('../../figs/mnist/loss_lr.png', format='png')
     
     def plotIO2(model):
 
@@ -554,6 +516,7 @@ if __name__ == '__main__':
         print(predicts)
         plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
         plt.plot(ts.detach().numpy(), ys.flatten().detach().numpy(), ts.detach().numpy(), predicts.flatten().detach().numpy(), marker='o')
+        # plt.savefig('../../figs/mnist/loss_lr.png', format='png')
         plt.show()
     
     def plotIO3(model):
@@ -585,14 +548,10 @@ if __name__ == '__main__':
         xs, ys = generate_random_lists(ts)
         predicts = model(xs.unsqueeze(0))
         plt.plot(ts.detach().numpy(), ys.flatten().detach().numpy(), ts.detach().numpy(), predicts.flatten().detach().numpy(), marker='o')
+        # plt.savefig('../../figs/mnist/loss_lr.png', format='png')
         plt.show()
 
-    plotIO1(model)
-
-
-
-
-# %%
+    plotIO3(model)
 
 
 """

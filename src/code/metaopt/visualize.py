@@ -12,14 +12,15 @@ def all_in_one_plot():
     mlr = 0.000010
     lr = 0.001000
     l2 = 0.000000
-    num_epoch = 100 
+    num_epoch = 100 + 1
     batch_sz = 11
     batch_vl = 100
-    fdir = './mnist/results/exp/mnist/mlr%f_lr%f_l2%f/bptt_%depoch_%dvlbz_sgd_1updatefreq_0resetfreq_fold0/' % (mlr, lr, l2, num_epoch, batch_vl)
-    lr_list = np.load(fdir+'lr.npy')[:-1]
-    l2_list = np.load(fdir+'l2.npy')[:-1]
-    dFlr_list = np.load(fdir+'dFdlr_list.npy')[:-1]
-    dFl2_list = np.load(fdir+'dFdl2_list.npy')[:-1]
+    # fdir = './mnist/results/exp/mnist/mlr%f_lr%f_l2%f/bptt_%depoch_%dvlbz_sgd_1updatefreq_0resetfreq_fold0/' % (mlr, lr, l2, num_epoch, batch_vl)
+    fdir = './mnist/results/exp/mnist/mlr0.000010_lr0.001000_l20.000000/bptt_100epoch_100vlbz_sgd_1updatefreq_0resetfreq_fold0/'
+    lr_list = np.load(fdir+'lr.npy')
+    l2_list = np.load(fdir+'l2.npy')
+    dFlr_list = np.load(fdir+'dFdlr_list.npy')
+    dFl2_list = np.load(fdir+'dFdl2_list.npy')
     te_epoch = np.load(fdir+'te_epoch.npy')
     tr_data_list = np.load(fdir+'tr_loss.npy')
     te_data_list = np.load(fdir+'te_loss.npy')
@@ -27,7 +28,8 @@ def all_in_one_plot():
     updates = np.arange(tr_data_list.shape[0])
     epochs = np.arange(num_epoch) * len(updates) / num_epoch
     te_epoch = te_epoch* len(updates) / num_epoch
-    te_data_list = np.mean(te_data_list.reshape([batch_sz, -1]), axis=0)
+    # print(te_epoch, len(te_epoch))
+    # te_data_list = np.mean(te_data_list.reshape([batch_sz, -1]), axis=0)
 
     color='indianred'
     fig, axs = plt.subplots(2, 2, figsize=(16, 16), sharey=False)
@@ -36,7 +38,7 @@ def all_in_one_plot():
     ax00.set_ylabel('Loss', color=color)
     ax00.plot(updates, tr_data_list, color=color, label='Train', alpha=0.5)
     print(te_data_list)
-    ax00.plot(te_epoch[::100], te_data_list, color=color, ls='--', label='Test')
+    ax00.plot(te_epoch, te_data_list, color=color, ls='--', label='Test')
     ax00.legend()
 
     color='skyblue'
@@ -62,7 +64,7 @@ def all_in_one_plot():
     ax10.set_xlabel('Updates')
     ax10.set_ylabel('Loss', color=color)
     ax10.plot(updates, tr_data_list, color=color, label='Train', alpha=0.5)
-    ax10.plot(te_epoch[::100], te_data_list, color=color, ls='--', label='Test')
+    ax10.plot(te_epoch, te_data_list, color=color, ls='--', label='Test')
     ax10.legend()
 
     color='mediumpurple'
