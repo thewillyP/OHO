@@ -80,6 +80,30 @@ def createExamplesIO2(numExamples, ts, createExamplesIO):
     
     return X_batch, Y_batch
 
+
+def randomSineWaveIO():
+        amplitude = np.random.uniform(-1, 1)  # Random amplitude between 0.5 and 2
+        frequency = np.random.uniform(0, 100)   # Random frequency between 1 and 10 Hz
+        phase_shift = np.random.uniform(0, 2 * np.pi)
+        bias = np.random.uniform(-1, 1)
+        sine_wave = lambda t: amplitude * np.sin(frequency * t + phase_shift) + bias
+        return sine_wave
+
+def randomSineExampleIO(t1: float, t2: float):
+    x1 = randomSineWaveIO()
+    x2 = randomSineWaveIO()
+    y = createDelayedAdder(t1, t2, x1, x2)
+    return x1, x2, y
+
+def randomSparseIO(t1: float, t2: float, outT: float):
+        a_ = np.random.uniform(-2, 2)
+        b_ = np.random.uniform(-2, 2)
+        t1d = 1 #RNG.uniform(0, 2)
+        t2d = 1 #RNG.uniform(0, 2)
+        x1, x2, y = createAddMemoryTask(t1, t2, a_, b_, t1d, t2d, outT)
+        return x1, x2, y
+
+
 #%%
 
 
@@ -92,19 +116,7 @@ if __name__ == "__main__":
     batch = 2
 
 
-    def randomSineWaveIO():
-        amplitude = np.random.uniform(-1, 1)  # Random amplitude between 0.5 and 2
-        frequency = np.random.uniform(0, 100)   # Random frequency between 1 and 10 Hz
-        phase_shift = np.random.uniform(0, 2 * np.pi)
-        bias = np.random.uniform(-1, 1)
-        sine_wave = lambda t: amplitude * np.sin(frequency * t + phase_shift) + bias
-        return sine_wave
-
-    def randomSineExampleIO(t1: float, t2: float):
-        x1 = randomSineWaveIO()
-        x2 = randomSineWaveIO()
-        y = createDelayedAdder(t1, t2, x1, x2)
-        return x1, x2, y
+    
 
     genRndomSineExampleIO = lambda: randomSineExampleIO(t1, t2)
 

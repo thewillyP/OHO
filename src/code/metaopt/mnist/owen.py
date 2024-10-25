@@ -9,7 +9,8 @@ from copy import copy
 import numpy as np
 from metaopt.util_ml import *
 from metaopt.util import *
-
+from toolz import accumulate
+from myfunc import jacobian
 
 def split_weight_matrix(A, sizes, axis=1):
     """Splits a weight matrix along the specified axis (0 for row, 1 for
@@ -376,8 +377,8 @@ class LinearFunction(torch.autograd.Function):
 
 class RTRLFunction(torch.autograd.Function):
     @staticmethod
-    def forward(seq, h0, rnn: torch.nn.RNN, state):
-        new_hidden_state = rnn(seq, h0)
+    def forward(h0, seq, rnn, state):
+        new_hidden_state = rnn(h0, seq)
         return new_hidden_state
     
     @staticmethod
@@ -391,6 +392,7 @@ class RTRLFunction(torch.autograd.Function):
 # The gradient of this is literally the new influenceMatrix which I can pass in again
 
     @staticmethod
+    @torch.autograd.function.once_differentiable
     def backward(ctx, grad_output):
         # Retrieve saved tensors
         influenceMatrix = ctx.state.influenceMatrix
@@ -399,6 +401,13 @@ class RTRLFunction(torch.autograd.Function):
         n = seq.size(1)
         for i in range(n):
             xs = seq[:,i,:]
+        
+        def fn(state, ht):
+            infMtx, ht_1 = state
+            dActivation = jacobian(ht, ht_1)
+            dActivation @ infMtx
+
+        accumulate(fn, hs, (influenceMatrix, h0))
         
         
         # Compute gradient of the hidden state wrt to the weight (RTRL update)
@@ -417,3 +426,4 @@ class RTRLFunction(torch.autograd.Function):
         return grad_input, grad_hidden, grad_weight
 
 # Example usage:
+

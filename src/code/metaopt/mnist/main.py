@@ -20,32 +20,6 @@ from metaopt.util import *
 from metaopt.util_ml import *
 from delayed_add_task import *
 
-# tsss = torch.arange(11)
-# t1 = 2 
-# t2 = 2
-
-# def generate_random_lists(ts):
-#     #` Generate random lists for x1(t) and x2(t)
-#     T = len(ts)
-#     x1 = torch.randn(T)  # Random values for x1
-#     x2 = torch.randn(T)  # Random values for x2
-    
-#     # Initialize y(t) with zeros
-#     y = torch.zeros(T)
-    
-#     # Calculate y(t) = x1(t - t1) + x2(t - t2)
-#     for t in ts:
-#         if t >= max(t1, t2):
-#             y[t] = x1[t - t1] + x2[t - t2]
-    
-#     return torch.stack([x1, x2], dim=1), y
-
-# xs, ys = generate_random_lists(tsss)
-# print(xs)
-# print(ys)
-
-
-
 TRAIN=0
 VALID=1
 TEST =2
@@ -113,152 +87,105 @@ def load_mnist(args):
     dataset = [data_loader_tr, data_loader_vl, data_loader_te]
     return dataset
 
-def load_sinadder(args):
-    # t1: float = 0.01
+
+# t1: float = 0.01
     # t2: float = 0.01
     # seq_length = 200
     # ts = torch.linspace(0, 2, seq_length)
     # num_examples = 5000
 
-    t1: int = 1
-    t2: int = 1
+    # t1: int = 1
+    # t2: int = 1
 
-    seq_length = 20
-    ts = torch.arange(0, seq_length)
-    num_examples = 1000
+    # seq_length = 20
+    # ts = torch.arange(0, seq_length)
+    # num_examples = 1000
 
-    def randomSineWaveIO():
-        amplitude = RNG.uniform(-1, 1)  # Random amplitude between 0.5 and 2
-        frequency = RNG.uniform(0, 20)   # Random frequency between 1 and 10 Hz
-        phase_shift = RNG.uniform(0, 2 * np.pi)
-        bias = RNG.uniform(-1, 1)
-        sine_wave = lambda t: amplitude * torch.sin(frequency * t + phase_shift) + bias
-        return sine_wave
+def getDataset(loader, numEx_tr: int, numEx_vl: int, numEx_te: int):
+    return [loader(numEx_tr), cycle(loader(numEx_vl)), loader(numEx_te)]
 
-    def randomSineExampleIO(t1: float, t2: float):
-        x1 = randomSineWaveIO()
-        x2 = randomSineWaveIO()
-        y = createDelayedAdder(t1, t2, x1, x2)
-        return x1, x2, y
+# genRndomSineExampleIO = lambda: randomSineExampleIO(t1, t2)
 
-    genRndomSineExampleIO = lambda: randomSineExampleIO(t1, t2)
+@curry
+def load_adder_task(randomAdderIO, t1: float, t2: float, ts, args, numEx: int):
+    seq_length = len(ts)
+    xs, ys = createExamplesIO(numEx, ts, randomAdderIO)
+    ts_broadcasted = ts.view(1, seq_length, 1).expand(numEx, seq_length, 1)
+    ys[ts_broadcasted <= max(t1, t2)] = 0
+    ds = TensorDataset(xs, ys)
+    dl = DataLoader(ds, batch_size=args.batch_size, shuffle=True)
+    return dl
 
-    # if os.path.exists('tensors.pth'):
-    #     # Load saved tensors
-    #     loaded_tensors = torch.load('tensors.pth')
-    #     xs_train = loaded_tensors['xs_train']
-    #     ys_train = loaded_tensors['ys_train']
-    #     xs_vl = loaded_tensors['xs_vl']
-    #     ys_vl = loaded_tensors['ys_vl']
-    #     xs_test = loaded_tensors['xs_test']
-    #     ys_test = loaded_tensors['ys_test']
-    # else:
-    #     xs_train, ys_train = createExamplesIO(num_examples, ts, genRndomSineExampleIO)
-    #     xs_vl, ys_vl = createExamplesIO(num_examples-4000, ts, genRndomSineExampleIO)
-    #     xs_test, ys_test = createExamplesIO(num_examples-4000, ts, genRndomSineExampleIO)
+load_sinadder = lambda t1, t2: load_adder_task(lambda: randomSineExampleIO(t1, t2), t1, t2)
+load_sparse = lambda outT, t1, t2: load_adder_task(lambda: randomSparseIO(t1, t2, outT), t1, t2)
 
-    #     torch.save({'xs_train': xs_train, 
-    #                 'ys_train': ys_train,
-    #                 'xs_vl': xs_vl, 
-    #                 'ys_vl': ys_vl,
-    #                 'xs_test': xs_test, 
-    #                 'ys_test': ys_test
-    #                 }, 'tensors.pth')
-    xs_train, ys_train = createExamplesIO(num_examples, ts, genRndomSineExampleIO)
-    xs_vl, ys_vl = createExamplesIO(num_examples-600, ts, genRndomSineExampleIO)
-    xs_test, ys_test = createExamplesIO(num_examples-600, ts, genRndomSineExampleIO)
+# @curry
+# def load_sinadder(t1: float, t2: float, ts, args, numEx: int):
+#     seq_length = len(ts)
+#     genRndomSineExampleIO = lambda: randomSineExampleIO(t1, t2)
+
+#     xs, ys = createExamplesIO(numEx, ts, genRndomSineExampleIO)
+#     ts_broadcasted = ts.view(1, seq_length, 1).expand(numEx, seq_length, 1)
+#     ys[ts_broadcasted <= max(t1, t2)] = 0
+#     ds = TensorDataset(xs, ys)
+#     dl = DataLoader(ds, batch_size=args.batch_size, shuffle=True)
+#     return dl
 
 
-    ts_broadcasted = ts.view(1, seq_length, 1).expand(num_examples, seq_length, 1)
-    ts_broadcasted1 = ts.view(1, seq_length, 1).expand(num_examples-600, seq_length, 1)
-    ts_broadcasted2 = ts.view(1, seq_length, 1).expand(num_examples-600, seq_length, 1)
+# @curry 
+# def load_sparse(outT: float, t1: float, t2: float, ts, args, numEx: int):
 
-    ys_train[ts_broadcasted <= max(t1, t2)] = 0
-    ys_vl[ts_broadcasted1 <= max(t1, t2)] = 0
-    ys_test[ts_broadcasted2 <= max(t1, t2)] = 0
-    
-    dataset_train = TensorDataset(xs_train, ys_train)
-    dataset_vl = TensorDataset(xs_vl, ys_vl)
-    dataset_test = TensorDataset(xs_test, ys_test)
+#     genRandomSparseIO = lambda: randomSparseIO(t1, t2, outT)
 
-    data_loader_tr = DataLoader(dataset_train, batch_size=args.batch_size, shuffle=True)
-    data_loader_vl = DataLoader(dataset_vl, batch_size=args.batch_size, shuffle=True)
-    data_loader_te = DataLoader(dataset_test, batch_size=args.batch_size, shuffle=True)
-
-    data_loader_vl = cycle(data_loader_vl)
-    dataset = [data_loader_tr, data_loader_vl, data_loader_te]
-    return dataset
+#     # xs_train, ys_train = createExamplesIO(num_examples, ts, genRandomSparseIO)
+#     xs_vl, ys_vl = createExamplesIO(num_examples, ts, genRandomSparseIO)
+#     # xs_test, ys_test = createExamplesIO(num_examples, ts, genRandomSparseIO)
 
 
+#     def randomSineWaveIO():
+#         amplitude = RNG.uniform(-1, 1)  # Random amplitude between 0.5 and 2
+#         frequency = RNG.uniform(0, 20)   # Random frequency between 1 and 10 Hz
+#         phase_shift = RNG.uniform(0, 2 * np.pi)
+#         bias = RNG.uniform(-1, 1)
+#         sine_wave = lambda t: amplitude * torch.sin(frequency * t + phase_shift) + bias
+#         return sine_wave
 
-def load_sparse(args):
-    t1: float = 5
-    t2: float = 2
-    outT: float = 9
+#     def randomSineExampleIO(t1: float, t2: float):
+#         x1 = randomSineWaveIO()
+#         x2 = randomSineWaveIO()
+#         y = createDelayedAdder(t1, t2, x1, x2)
+#         return x1, x2, y
 
-    seq_length = 10
-    ts = torch.arange(0, seq_length)
-    num_examples = 1000
+#     genRndomSineExampleIO = lambda: randomSineExampleIO(t1, t2)
+#     # xs_vl, ys_vl = createExamplesIO(num_examples, ts, genRndomSineExampleIO)
+#     # ts_broadcasted1 = ts.view(1, seq_length, 1).expand(num_examples, seq_length, 1)
+#     # ys_vl[ts_broadcasted1 <= max(t1, t2)] = 0
 
-    def randomSparseIO(t1: float, t2: float):
-        a_ = RNG.uniform(-2, 2)
-        b_ = RNG.uniform(-2, 2)
-        t1d = 1 #RNG.uniform(0, 2)
-        t2d = 1 #RNG.uniform(0, 2)
-        x1, x2, y = createAddMemoryTask(t1, t2, a_, b_, t1d, t2d, outT)
-        return x1, x2, y
-
-    genRandomSparseIO = lambda: randomSparseIO(t1, t2)
-
-    # xs_train, ys_train = createExamplesIO(num_examples, ts, genRandomSparseIO)
-    xs_vl, ys_vl = createExamplesIO(num_examples, ts, genRandomSparseIO)
-    # xs_test, ys_test = createExamplesIO(num_examples, ts, genRandomSparseIO)
-
-
-    def randomSineWaveIO():
-        amplitude = RNG.uniform(-1, 1)  # Random amplitude between 0.5 and 2
-        frequency = RNG.uniform(0, 20)   # Random frequency between 1 and 10 Hz
-        phase_shift = RNG.uniform(0, 2 * np.pi)
-        bias = RNG.uniform(-1, 1)
-        sine_wave = lambda t: amplitude * torch.sin(frequency * t + phase_shift) + bias
-        return sine_wave
-
-    def randomSineExampleIO(t1: float, t2: float):
-        x1 = randomSineWaveIO()
-        x2 = randomSineWaveIO()
-        y = createDelayedAdder(t1, t2, x1, x2)
-        return x1, x2, y
-
-    genRndomSineExampleIO = lambda: randomSineExampleIO(t1, t2)
-    # xs_vl, ys_vl = createExamplesIO(num_examples, ts, genRndomSineExampleIO)
-    # ts_broadcasted1 = ts.view(1, seq_length, 1).expand(num_examples, seq_length, 1)
-    # ys_vl[ts_broadcasted1 <= max(t1, t2)] = 0
-
-    xs_train, ys_train = createExamplesIO(num_examples, ts, genRndomSineExampleIO)
-    # xs_vl, ys_vl = createExamplesIO(num_examples-600, ts, genRndomSineExampleIO)
-    xs_test, ys_test = createExamplesIO(num_examples, ts, genRndomSineExampleIO)
+#     xs_train, ys_train = createExamplesIO(num_examples, ts, genRndomSineExampleIO)
+#     # xs_vl, ys_vl = createExamplesIO(num_examples-600, ts, genRndomSineExampleIO)
+#     xs_test, ys_test = createExamplesIO(num_examples, ts, genRndomSineExampleIO)
 
 
-    ts_broadcasted = ts.view(1, seq_length, 1).expand(num_examples, seq_length, 1)
-    # ts_broadcasted1 = ts.view(1, seq_length, 1).expand(num_examples, seq_length, 1)
-    ts_broadcasted2 = ts.view(1, seq_length, 1).expand(num_examples, seq_length, 1)
+#     ts_broadcasted = ts.view(1, seq_length, 1).expand(num_examples, seq_length, 1)
+#     # ts_broadcasted1 = ts.view(1, seq_length, 1).expand(num_examples, seq_length, 1)
+#     ts_broadcasted2 = ts.view(1, seq_length, 1).expand(num_examples, seq_length, 1)
 
-    ys_train[ts_broadcasted <= max(t1, t2)] = 0
-    # ys_vl[ts_broadcasted1 <= max(t1, t2)] = 0
-    ys_test[ts_broadcasted2 <= max(t1, t2)] = 0
+#     ys_train[ts_broadcasted <= max(t1, t2)] = 0
+#     # ys_vl[ts_broadcasted1 <= max(t1, t2)] = 0
+#     ys_test[ts_broadcasted2 <= max(t1, t2)] = 0
 
     
-    dataset_train = TensorDataset(xs_train, ys_train)
-    dataset_vl = TensorDataset(xs_vl, ys_vl)
-    dataset_test = TensorDataset(xs_test, ys_test)
+#     dataset_train = TensorDataset(xs_train, ys_train)
+#     dataset_vl = TensorDataset(xs_vl, ys_vl)
+#     dataset_test = TensorDataset(xs_test, ys_test)
 
-    data_loader_tr = DataLoader(dataset_train, batch_size=args.batch_size, shuffle=True)
-    data_loader_vl = DataLoader(dataset_vl, batch_size=args.batch_size, shuffle=True)
-    data_loader_te = DataLoader(dataset_test, batch_size=args.batch_size, shuffle=True)
+#     data_loader_tr = DataLoader(dataset_train, batch_size=args.batch_size, shuffle=True)
+#     data_loader_vl = DataLoader(dataset_vl, batch_size=args.batch_size, shuffle=True)
+#     data_loader_te = DataLoader(dataset_test, batch_size=args.batch_size, shuffle=True)
 
-    data_loader_vl = cycle(data_loader_vl)
-    dataset = [data_loader_tr, data_loader_vl, data_loader_te]
-    return dataset
+#     data_loader_vl = cycle(data_loader_vl)
+#     dataset = [data_loader_tr, data_loader_vl, data_loader_te]
+#     return dataset
 
 
 def load_random(args):
@@ -308,7 +235,8 @@ def load_random(args):
 def main(args, ifold=0, trial=0, quotient=None, device='cuda', is_cuda=1):  # iscuda not even used
 
     # dataset = load_mnist(args)
-    dataset = load_sinadder(args)
+    loader = load_sinadder(5, 1)(torch.arange(0, 20), args)
+    dataset = getDataset(loader, 1000, 1000, 200) 
 
     ## Initialize Model and Optimizer
     # hdims = [args.xdim] + [args.hdim]*args.num_hlayers + [args.ydim]
@@ -324,7 +252,7 @@ def main(args, ifold=0, trial=0, quotient=None, device='cuda', is_cuda=1):  # is
         model = MLP_Drop(num_layers, hdims, args.lr, args.lambda_l2, is_cuda=is_cuda)
         optimizer = optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.lambda_l2)
     elif args.model_type == 'bptt':
-        model = BPTTRNN(2, 200, 1, args.lr, args.lambda_l2, is_cuda=is_cuda)
+        model = BPTTRNN(2, 400, 1, args.lr, args.lambda_l2, is_cuda=is_cuda)
         optimizer = optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.lambda_l2)
     else:
         model = MLP(num_layers, hdims, args.lr, args.lambda_l2, is_cuda=is_cuda)
@@ -430,12 +358,12 @@ def train(args, dataset, model, optimizer, saveF=0, is_cuda=1):
                 model.reset_jacob() 
 
             """ meta update only uses most recent gradient on the update freq. feval resets gradient everytime its called. so meta_update will not use the sum of gradients """
-            if counter % args.update_freq == 0 and args.mlr != 0.0:
-                data_vl, target_vl = next(dataset[VALID])
-                data_vl, target_vl = to_torch_variable(data_vl, target_vl, is_cuda)
-                model, loss_vl, optimizer = meta_update(args, data_vl, target_vl, data, target, model, optimizer, noise, is_cuda=is_cuda)
-                vl_epoch.append(counter)
-                vl_loss_list.append(loss_vl.item())
+            # if counter % args.update_freq == 0 and args.mlr != 0.0:
+            #     data_vl, target_vl = next(dataset[VALID])
+            #     data_vl, target_vl = to_torch_variable(data_vl, target_vl, is_cuda)
+            #     model, loss_vl, optimizer = meta_update(args, data_vl, target_vl, data, target, model, optimizer, noise, is_cuda=is_cuda)
+            #     vl_epoch.append(counter)
+            #     vl_loss_list.append(loss_vl.item())
 
             counter += 1  
         #grad_list = np.asarray(grad_list)   
@@ -612,13 +540,13 @@ if __name__ == '__main__':
     args = Arg()
     args.is_cuda = 0
     args.mlr = 0.00001
-    args.lr = 0.001
+    args.lr = 0.01
     args.lambda_l2 = 0.
     args.opt_type = "sgd"
     args.update_freq = 1
     args.save = 1
     args.model_type = 'bptt'
-    args.num_epoch = 200
+    args.num_epoch = 100
     args.save_dir = "results"
     args.batch_size = 100
     args.reset_freq = 0 
@@ -628,9 +556,10 @@ if __name__ == '__main__':
     model = main(args, ifold=ifold, is_cuda=is_cuda)
 
     # %%
+    from matplotlib.ticker import MaxNLocator
 
     def plotIO1(model):
-        t1: int = 1
+        t1: int = 5
         t2: int = 1
         seq_length = 20
         ts = torch.arange(0, seq_length)
@@ -661,10 +590,10 @@ if __name__ == '__main__':
     def plotIO2(model):
 
         t1: float = 5
-        t2: float = 2
+        t2: float = 1
         outT: float = 9
 
-        seq_length = 10
+        seq_length = 20
         ts = torch.arange(0, seq_length)
 
         def randomSineExampleIO(t1: float, t2: float):
@@ -679,18 +608,21 @@ if __name__ == '__main__':
         genRndomSineExampleIO = lambda: randomSineExampleIO(t1, t2)
         x1, x2, y = genRndomSineExampleIO()
         xs, ys = createExamples(ts, x1, x2, y)
+        ys[ts <= max(t1, t2)] = 0
+        # print(xs)
         predicts = model(xs.unsqueeze(0))
-        print(predicts.shape, ys.shape)
-        plt.plot(ts.detach().numpy(), ys.flatten().detach().numpy(), ts.detach().numpy(), predicts.flatten().detach().numpy())
+        print(predicts)
+        plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
+        plt.plot(ts.detach().numpy(), ys.flatten().detach().numpy(), ts.detach().numpy(), predicts.flatten().detach().numpy(), marker='o')
         plt.show()
     
-    def plotIO3(model):
+    def plotIO1(model):
 
         t1: float = 1
         t2: float = 1
         outT: float = 9
 
-        seq_length = 10
+        seq_length = 20
         ts = torch.arange(0, seq_length)
 
         def generate_random_lists(ts):
@@ -713,10 +645,10 @@ if __name__ == '__main__':
 
         xs, ys = generate_random_lists(ts)
         predicts = model(xs.unsqueeze(0))
-        plt.plot(ts.detach().numpy(), ys.flatten().detach().numpy(), ts.detach().numpy(), predicts.flatten().detach().numpy())
+        plt.plot(ts.detach().numpy(), ys.flatten().detach().numpy(), ts.detach().numpy(), predicts.flatten().detach().numpy(), marker='o')
         plt.show()
 
-    plotIO1(model)
+    plotIO2(model)
 
 
 

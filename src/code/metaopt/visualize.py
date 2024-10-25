@@ -1,23 +1,25 @@
+#%%
+
 import os, sys
 import numpy as np
 import scipy as sp
 import matplotlib.pyplot as plt
 plt.rcParams.update({'font.size': 22})
-basepath = '/misc/vlgscratch4/ChoGroup/imj/'
+# basepath = '/misc/vlgscratch4/ChoGroup/imj/'
 
 def all_in_one_plot():
 
-    mlr = 0.0001
-    lr = 0.01
-    l2 = 0.000010
-    num_epoch = 300 
-    batch_sz = 100
-    batch_vl = 5000
-    fdir = './exp/mlr%f_lr%f_l2%f/%depoch_%dvlbz/' % (mlr, lr, l2, num_epoch, batch_vl)
-    lr_list = np.load(fdir+'lr.npy')
-    l2_list = np.load(fdir+'l2.npy')
-    dFlr_list = np.load(fdir+'dFdlr_list.npy')
-    dFl2_list = np.load(fdir+'dFdl2_list.npy')
+    mlr = 0.000010
+    lr = 0.001000
+    l2 = 0.000000
+    num_epoch = 100 
+    batch_sz = 11
+    batch_vl = 100
+    fdir = './mnist/results/exp/mnist/mlr%f_lr%f_l2%f/bptt_%depoch_%dvlbz_sgd_1updatefreq_0resetfreq_fold0/' % (mlr, lr, l2, num_epoch, batch_vl)
+    lr_list = np.load(fdir+'lr.npy')[:-1]
+    l2_list = np.load(fdir+'l2.npy')[:-1]
+    dFlr_list = np.load(fdir+'dFdlr_list.npy')[:-1]
+    dFl2_list = np.load(fdir+'dFdl2_list.npy')[:-1]
     te_epoch = np.load(fdir+'te_epoch.npy')
     tr_data_list = np.load(fdir+'tr_loss.npy')
     te_data_list = np.load(fdir+'te_loss.npy')
@@ -33,6 +35,7 @@ def all_in_one_plot():
     ax00.set_xlabel('Updates')
     ax00.set_ylabel('Loss', color=color)
     ax00.plot(updates, tr_data_list, color=color, label='Train', alpha=0.5)
+    print(te_data_list)
     ax00.plot(te_epoch[::100], te_data_list, color=color, ls='--', label='Test')
     ax00.legend()
 
@@ -82,7 +85,7 @@ def all_in_one_plot():
     ax11a.grid(True)
 
     plt.tight_layout()
-    plt.savefig('./figs/mnist/loss_lr.png', format='png')
+    plt.savefig('../figs/mnist/loss_lr.png', format='png')
     plt.close()
 
 
@@ -158,6 +161,12 @@ def boxfigure(Xticklabels, Y_list, colours, xlabel, ylabel, fname):
 
 if __name__ == '__main__':
 
+    if os.path.isdir("./results/exp/mnist/mlr0.000010_lr0.001000_l20.000000/bptt_100epoch_100vlbz_sgd_1updatefreq_0resetfreq_fold0/lr.npy"):
+        print("yes")
+    else:
+        print(os.getcwd())
     all_in_one_plot()
 
 
+
+# %%

@@ -31,7 +31,12 @@ def rnnTransition(W_in, W_rec, b_rec, activation, alpha, h, x):
     return (1 - alpha) * h + alpha * activation(f.linear(x, W_in, bias=None) + f.linear(h, W_rec, bias=b_rec))
 
 W_rec_, W_in_, b_rec_, _, _ = initializeParametersIO(2, 4, 2)
-rnn = lambda h, x: rnnTransition(W_in_, W_rec_, b_rec_, lambda x: x, 1, h, x)  #.detach().requires_grad_(True)
+# rnn = lambda h, x: rnnTransition(W_in_, W_rec_, b_rec_, lambda x: x, 1, h, x)  #.detach().requires_grad_(True)
+
+def rnn(h, x):
+    ht = rnnTransition(W_in_, W_rec_, b_rec_, lambda x: x, 1, h.detach().requires_grad_(True), x)
+    return ht
+
 
 # rnn = torch.nn.RNN(2, 4, 1, batch_first=True, nonlinearity='relu')
 seq = torch.tensor([[1.0, 1.0], 
@@ -51,8 +56,8 @@ hs = list(drop(1)(scan(rnn, h0, seq)))
 h1 = hs[0]
 h2 = hs[1]
 
-# print(h1.requires_grad, h1.grad_fn)
-# print(h2.requires_grad, h1.grad_fn)
+print(h1.requires_grad, h1.grad_fn)
+print(h2.requires_grad, h1.grad_fn)
 
 # h1 = h1.detach().requires_grad_(True)
 # h1.register_hook(lambda grad: torch.zeros_like(grad))
@@ -100,12 +105,14 @@ def jacobian(_os, _is):
 # # print(jacobian(h1, W_rec_))
 # aa, = jacobian(h1, W_rec_)
 # print(W_rec_.T @ aa+jacobian(h2, W_rec_)[0])
-print(jacobian(h2, W_rec_))
+print(jacobian(h1, h0))
 
 """
 1. y = x*2, z = x*y, and I want dz/dx but I want to treat y as a constant. how can I do this
 To solve this problem, I will just return a detached, requires grad hidden state every forward pass. This is fine bc BPTT doesn't require me to keep the entire computational graph
 2. 
+
+It's a contradiction, if I want to use (h1, h0), then h1 cannot be detached. But if I want (h2, h1), then h1 must be detached. Therefore h1 cannot be simul detach same time. 
 """
 
 

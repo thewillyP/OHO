@@ -9,8 +9,8 @@ from copy import copy
 import numpy as np
 from metaopt.util_ml import *
 from metaopt.util import *
-
-
+from myfunc import *
+from toolz.curried import drop, compose
 
 
 
@@ -23,10 +23,16 @@ class BPTTRNN(nn.Module):
     def __init__(self, n_in: int, n_h: int, n_out: int, lr_init, lambda_l2, is_cuda=0):
         super(BPTTRNN, self).__init__()
 
-        self.rnn = nn.RNN(n_in, n_h, 1, batch_first=True, nonlinearity='tanh')  # sampels weights from uniform which is pretty big
-        self.fc = nn.Linear(n_h, n_out)
+        self.W_rec_, self.W_in_, self.b_rec_, self.W_out_, self.b_out_ = initializeParametersIO(n_in, n_h, n_out)
+        self.rnn = compose(drop(1)
+                        ,  scan(rnnTransition(self.W_in_, self.W_rec_, self.b_rec_, f.relu, 1)))
+        self.fc = linear_(self.W_out_,self.b_out_)
+        self.initH = lambda x: torch.zeros(x.size(0), n_h).to('cpu' if is_cuda==0 else 'gpu') 
+        
+        # self.rnn = nn.RNN(n_in, n_h, 1, batch_first=True, nonlinearity='tanh')  # sampels weights from uniform which is pretty big
+        # self.fc = nn.Linear(n_h, n_out)
+        # self.initH = lambda x: torch.zeros(1, x.size(0), n_h).to('cpu' if is_cuda==0 else 'gpu') 
 
-        self.initH = lambda x: torch.zeros(1, x.size(0), n_h).to('cpu' if is_cuda==0 else 'gpu') 
         # self.reshapeImage = lambda images: images.view(-1, sequence_length, n_in).to('cpu' if is_cuda==0 else 'gpu')
 
 
@@ -59,11 +65,27 @@ class BPTTRNN(nn.Module):
         # print(x)
         # print(x.shape)
         # quit()
-        h0 = self.initH(x)
-        x, _ = self.rnn(x, h0)
+
+        h0 = self.initH(x)  # ordering... need fist dimension to be batch size
+        x = x.permute(1, 0, 2)
+        
+        # print(h0.shape)
+        x = self.rnn(h0, x)
+        x = list(x)
+        print(x)
+        x = torch.stack(x)
         # x = x[:, -1, :]
         x = self.fc(x)
+        x = x.permute(1, 0, 2)
         return x
+    
+
+        # h0 = self.initH(x)
+        # x, _ = self.rnn(x, h0)
+        # x = self.fc(x)
+        # return x
+
+
         # if logsoftmaxF:
         #     print(x)
         #     print(F.log_softmax(x, dim=2))
