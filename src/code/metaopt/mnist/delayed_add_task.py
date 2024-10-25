@@ -71,7 +71,8 @@ def createExamplesIO2(numExamples, ts, createExamplesIO):
     Y_batch = []
     
     for _ in range(numExamples):
-        X, Y = createExamplesIO(ts)
+        fn = createExamplesIO()
+        X, Y = fn(ts)
         X_batch.append(X)
         Y_batch.append(Y)
     
@@ -95,7 +96,8 @@ def randomSineExampleIO(t1: float, t2: float):
     y = createDelayedAdder(t1, t2, x1, x2)
     return x1, x2, y
 
-def randomSparseIO(t1: float, t2: float, outT: float):
+@curry
+def randomSparseIO(outT: float, t1: float, t2: float):
         a_ = np.random.uniform(-2, 2)
         b_ = np.random.uniform(-2, 2)
         t1d = 1 #RNG.uniform(0, 2)
@@ -103,31 +105,46 @@ def randomSparseIO(t1: float, t2: float, outT: float):
         x1, x2, y = createAddMemoryTask(t1, t2, a_, b_, t1d, t2d, outT)
         return x1, x2, y
 
+@curry
+def generate_random_lists(t1, t2, ts):
+    T = len(ts)
+    x1 = np.random.randn(T) 
+    x2 = np.random.randn(T) 
+    x1 = torch.from_numpy(x1).to(torch.float32)
+    x2 = torch.from_numpy(x2).to(torch.float32)
+    y = torch.zeros(T).to(torch.float32)
+    # Calculate y(t) = x1(t - t1) + x2(t - t2)
+    for t in ts:
+        if t >= max(t1, t2):
+            y[t] = x1[t - t1] + x2[t - t2]
+    
+    return torch.stack([x1, x2], dim=1), y
+
 
 #%%
 
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
 
-    np.random.seed(0)  #! Global state change
-    t1: float = 6
-    t2: float = 4
-    ts = torch.linspace(0, 15, 1000)
-    batch = 2
+#     np.random.seed(0)  #! Global state change
+#     t1: float = 6
+#     t2: float = 4
+#     ts = torch.linspace(0, 15, 1000)
+#     batch = 2
 
 
     
 
-    genRndomSineExampleIO = lambda: randomSineExampleIO(t1, t2)
+#     genRndomSineExampleIO = lambda: randomSineExampleIO(t1, t2)
 
 
 
-    xs, ys = createExamplesIO(3, ts, genRndomSineExampleIO)
-    dataset = TensorDataset(xs, ys)
-    dataloader = DataLoader(dataset, batch_size=batch, shuffle=True)
+#     xs, ys = createExamplesIO(3, ts, genRndomSineExampleIO)
+#     dataset = TensorDataset(xs, ys)
+#     dataloader = DataLoader(dataset, batch_size=batch, shuffle=True)
 
-    x1, x2, y = genRndomSineExampleIO()
-    plt.plot(ts, listmap(x1, ts), ts, listmap(x2, ts), ts, listmap(y, ts))
+#     x1, x2, y = genRndomSineExampleIO()
+#     plt.plot(ts, listmap(x1, ts), ts, listmap(x2, ts), ts, listmap(y, ts))
 
 
 

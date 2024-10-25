@@ -86,18 +86,23 @@ def initializeParametersIO(n_in: int, n_h: int, n_out: int
     b_rec = np.random.normal(0, np.sqrt(1/(n_h)), (n_h,))
     b_out = np.random.normal(0, np.sqrt(1/(n_out)), (n_out,))
 
-    _W_rec = torch.nn.Parameter(torch.tensor(W_rec, requires_grad=True, dtype=torch.float32))
-    _W_in = torch.nn.Parameter(torch.tensor(W_in, requires_grad=True, dtype=torch.float32))
-    _b_rec = torch.nn.Parameter(torch.tensor(b_rec, requires_grad=True, dtype=torch.float32))
-    _W_out = torch.nn.Parameter(torch.tensor(W_out, requires_grad=True, dtype=torch.float32))
-    _b_out = torch.nn.Parameter(torch.tensor(b_out, requires_grad=True, dtype=torch.float32))
+    # _W_rec = torch.nn.Parameter(torch.tensor(W_rec, requires_grad=True, dtype=torch.float32))
+    # _W_in = torch.nn.Parameter(torch.tensor(W_in, requires_grad=True, dtype=torch.float32))
+    # _b_rec = torch.nn.Parameter(torch.tensor(b_rec, requires_grad=True, dtype=torch.float32))
+    # _W_out = torch.nn.Parameter(torch.tensor(W_out, requires_grad=True, dtype=torch.float32))
+    # _b_out = torch.nn.Parameter(torch.tensor(b_out, requires_grad=True, dtype=torch.float32))
+    _W_rec = torch.nn.Parameter(torch.from_numpy(W_rec).float().requires_grad_())
+    _W_in = torch.nn.Parameter(torch.from_numpy(W_in).float().requires_grad_())
+    _b_rec = torch.nn.Parameter(torch.from_numpy(b_rec).float().requires_grad_())
+    _W_out = torch.nn.Parameter(torch.from_numpy(W_out).float().requires_grad_())
+    _b_out = torch.nn.Parameter(torch.from_numpy(b_out).float().requires_grad_())
 
     return _W_rec, _W_in, _b_rec, _W_out, _b_out
 
 @curry
 def rnnTransition(W_in, W_rec, b_rec, activation, alpha, h, x):
-    return (1 - alpha) * h + alpha * activation(f.linear(x, W_in, bias=None) + f.linear(h, W_rec, bias=b_rec))
+    return (1 - alpha) * h + alpha * activation(f.linear(x, W_in, None) + f.linear(h, W_rec, b_rec))
 
 
 
-linear_ = curry(lambda w, b, h: f.linear(h, w, bias=b))
+linear_ = curry(lambda w, b, h: f.linear(h, w, b))

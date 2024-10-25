@@ -107,72 +107,34 @@ def getDataset(loader, numEx_tr: int, numEx_vl: int, numEx_te: int):
 # genRndomSineExampleIO = lambda: randomSineExampleIO(t1, t2)
 
 @curry
-def load_adder_task(randomAdderIO, t1: float, t2: float, ts, args, numEx: int):
+def load_adder_task(randomExamplesIO, randomAdderIO, t1: float, t2: float, ts, args, numEx: int):
     seq_length = len(ts)
-    xs, ys = createExamplesIO(numEx, ts, randomAdderIO)
+    xs, ys = randomExamplesIO(numEx, ts, lambda: randomAdderIO(t1, t2))
     ts_broadcasted = ts.view(1, seq_length, 1).expand(numEx, seq_length, 1)
-    ys[ts_broadcasted <= max(t1, t2)] = 0
+    ys[ts_broadcasted < max(t1, t2)] = 0
     ds = TensorDataset(xs, ys)
     dl = DataLoader(ds, batch_size=args.batch_size, shuffle=True)
     return dl
 
-load_sinadder = lambda t1, t2: load_adder_task(lambda: randomSineExampleIO(t1, t2), t1, t2)
-load_sparse = lambda outT, t1, t2: load_adder_task(lambda: randomSparseIO(t1, t2, outT), t1, t2)
+load_sinadder = load_adder_task(createExamplesIO, randomSineExampleIO)
+load_sparse = lambda outT: load_adder_task(createExamplesIO, randomSparseIO(outT))
+def load_random(seq_length, t1, t2):
+    ts = torch.arange(0, seq_length)
+    return load_adder_task(createExamplesIO2, generate_random_lists, t1, t2, ts)
 
-# @curry
-# def load_sinadder(t1: float, t2: float, ts, args, numEx: int):
-#     seq_length = len(ts)
-#     genRndomSineExampleIO = lambda: randomSineExampleIO(t1, t2)
+# def load_random(args):
+#     t1: int = 1
+#     t2: int = 1
 
-#     xs, ys = createExamplesIO(numEx, ts, genRndomSineExampleIO)
-#     ts_broadcasted = ts.view(1, seq_length, 1).expand(numEx, seq_length, 1)
-#     ys[ts_broadcasted <= max(t1, t2)] = 0
-#     ds = TensorDataset(xs, ys)
-#     dl = DataLoader(ds, batch_size=args.batch_size, shuffle=True)
-#     return dl
+#     seq_length = 10
+#     ts = torch.arange(0, seq_length)
+#     num_examples = 1000
 
+    
 
-# @curry 
-# def load_sparse(outT: float, t1: float, t2: float, ts, args, numEx: int):
-
-#     genRandomSparseIO = lambda: randomSparseIO(t1, t2, outT)
-
-#     # xs_train, ys_train = createExamplesIO(num_examples, ts, genRandomSparseIO)
-#     xs_vl, ys_vl = createExamplesIO(num_examples, ts, genRandomSparseIO)
-#     # xs_test, ys_test = createExamplesIO(num_examples, ts, genRandomSparseIO)
-
-
-#     def randomSineWaveIO():
-#         amplitude = RNG.uniform(-1, 1)  # Random amplitude between 0.5 and 2
-#         frequency = RNG.uniform(0, 20)   # Random frequency between 1 and 10 Hz
-#         phase_shift = RNG.uniform(0, 2 * np.pi)
-#         bias = RNG.uniform(-1, 1)
-#         sine_wave = lambda t: amplitude * torch.sin(frequency * t + phase_shift) + bias
-#         return sine_wave
-
-#     def randomSineExampleIO(t1: float, t2: float):
-#         x1 = randomSineWaveIO()
-#         x2 = randomSineWaveIO()
-#         y = createDelayedAdder(t1, t2, x1, x2)
-#         return x1, x2, y
-
-#     genRndomSineExampleIO = lambda: randomSineExampleIO(t1, t2)
-#     # xs_vl, ys_vl = createExamplesIO(num_examples, ts, genRndomSineExampleIO)
-#     # ts_broadcasted1 = ts.view(1, seq_length, 1).expand(num_examples, seq_length, 1)
-#     # ys_vl[ts_broadcasted1 <= max(t1, t2)] = 0
-
-#     xs_train, ys_train = createExamplesIO(num_examples, ts, genRndomSineExampleIO)
-#     # xs_vl, ys_vl = createExamplesIO(num_examples-600, ts, genRndomSineExampleIO)
-#     xs_test, ys_test = createExamplesIO(num_examples, ts, genRndomSineExampleIO)
-
-
-#     ts_broadcasted = ts.view(1, seq_length, 1).expand(num_examples, seq_length, 1)
-#     # ts_broadcasted1 = ts.view(1, seq_length, 1).expand(num_examples, seq_length, 1)
-#     ts_broadcasted2 = ts.view(1, seq_length, 1).expand(num_examples, seq_length, 1)
-
-#     ys_train[ts_broadcasted <= max(t1, t2)] = 0
-#     # ys_vl[ts_broadcasted1 <= max(t1, t2)] = 0
-#     ys_test[ts_broadcasted2 <= max(t1, t2)] = 0
+#     xs_train, ys_train = createExamplesIO2(num_examples, ts, generate_random_lists)
+#     xs_vl, ys_vl = createExamplesIO2(num_examples, ts, generate_random_lists)
+#     xs_test, ys_test = createExamplesIO2(num_examples, ts, generate_random_lists)
 
     
 #     dataset_train = TensorDataset(xs_train, ys_train)
@@ -188,54 +150,11 @@ load_sparse = lambda outT, t1, t2: load_adder_task(lambda: randomSparseIO(t1, t2
 #     return dataset
 
 
-def load_random(args):
-    t1: int = 1
-    t2: int = 1
-
-    seq_length = 10
-    ts = torch.arange(0, seq_length)
-    num_examples = 1000
-
-    def generate_random_lists(ts):
-        #` Generate random lists for x1(t) and x2(t)
-        T = len(ts)
-        x1 = RNG.randn(T)  # Random values for x1
-        x2 = RNG.randn(T)  # Random values for x2
-        x1 = torch.from_numpy(x1).to(torch.float32)
-        x2 = torch.from_numpy(x2).to(torch.float32)
-        
-        # Initialize y(t) with zeros
-        y = torch.zeros(T).to(torch.float32)
-        
-        # Calculate y(t) = x1(t - t1) + x2(t - t2)
-        for t in ts:
-            if t >= max(t1, t2):
-                y[t] = x1[t - t1] + x2[t - t2]
-        
-        return torch.stack([x1, x2], dim=1), y
-
-    xs_train, ys_train = createExamplesIO2(num_examples, ts, generate_random_lists)
-    xs_vl, ys_vl = createExamplesIO2(num_examples, ts, generate_random_lists)
-    xs_test, ys_test = createExamplesIO2(num_examples, ts, generate_random_lists)
-
-    
-    dataset_train = TensorDataset(xs_train, ys_train)
-    dataset_vl = TensorDataset(xs_vl, ys_vl)
-    dataset_test = TensorDataset(xs_test, ys_test)
-
-    data_loader_tr = DataLoader(dataset_train, batch_size=args.batch_size, shuffle=True)
-    data_loader_vl = DataLoader(dataset_vl, batch_size=args.batch_size, shuffle=True)
-    data_loader_te = DataLoader(dataset_test, batch_size=args.batch_size, shuffle=True)
-
-    data_loader_vl = cycle(data_loader_vl)
-    dataset = [data_loader_tr, data_loader_vl, data_loader_te]
-    return dataset
-
-
 def main(args, ifold=0, trial=0, quotient=None, device='cuda', is_cuda=1):  # iscuda not even used
 
     # dataset = load_mnist(args)
-    loader = load_sinadder(5, 1)(torch.arange(0, 20), args)
+    # loader = load_sinadder(1, 1, torch.arange(0, 20), args)
+    loader = load_random(20, 1, 1)(args)
     dataset = getDataset(loader, 1000, 1000, 200) 
 
     ## Initialize Model and Optimizer
@@ -335,11 +254,18 @@ def train(args, dataset, model, optimizer, saveF=0, is_cuda=1):
     
             print('Valid Epoch: %d, Loss %f Acc %f' % 
                 (epoch, np.mean(te_losses), np.mean(te_accs)))
+            
+            # for name, param in model.named_parameters():
+            #     print(f"{name} parameter values:\n{param.data}")
 
 
         grad_list = []
         start_time = time.time()
         for batch_idx, (data, target) in enumerate(dataset[TRAIN]):
+
+            # print(data[0])
+            # print(target[0])
+            # quit()
 
             data, target = to_torch_variable(data, target, is_cuda)
             opt_type = args.opt_type
@@ -468,9 +394,22 @@ def feval(data, target, model, optimizer, mode='eval', is_cuda=0, opt_type='sgd'
         grad_vec = np.hstack(grad_vec) 
         grad_vec = grad_vec / norm_np(grad_vec)
 
+        # for name, param in model.named_parameters():
+        #     if param.grad is not None:
+        #         print(f"{name} gradient: {param.grad.norm().item()}")  # Norm gives a sense of gradient magnitude
+        #     else:
+        #         print(f"{name} has no gradient.")
+        # quit()
+
     elif 'grad' in mode:
         loss.backward()
     
+        for name, param in model.named_parameters():
+            if param.grad is not None:
+                print(f"{name} gradient: {param.grad.norm().item()}")  # Norm gives a sense of gradient magnitude
+            else:
+                print(f"{name} has no gradient.")
+        quit()
 
     return model, loss.item(), accuracy.item(), output, noise, grad_vec
 
@@ -540,13 +479,13 @@ if __name__ == '__main__':
     args = Arg()
     args.is_cuda = 0
     args.mlr = 0.00001
-    args.lr = 0.01
+    args.lr = 0.005
     args.lambda_l2 = 0.
     args.opt_type = "sgd"
     args.update_freq = 1
     args.save = 1
     args.model_type = 'bptt'
-    args.num_epoch = 100
+    args.num_epoch = 200
     args.save_dir = "results"
     args.batch_size = 100
     args.reset_freq = 0 
@@ -559,7 +498,7 @@ if __name__ == '__main__':
     from matplotlib.ticker import MaxNLocator
 
     def plotIO1(model):
-        t1: int = 5
+        t1: int = 1
         t2: int = 1
         seq_length = 20
         ts = torch.arange(0, seq_length)
@@ -581,7 +520,7 @@ if __name__ == '__main__':
         genRndomSineExampleIO = lambda: randomSineExampleIO(t1, t2)
         x1, x2, y = genRndomSineExampleIO()
         xs, ys = createExamples(ts, x1, x2, y)
-        ys[ts <= max(t1, t2)] = 0
+        ys[ts < max(t1, t2)] = 0
         predicts = model(xs.unsqueeze(0))
         print(predicts.shape, ys.shape)
         plt.plot(ts.detach().numpy(), ys.flatten().detach().numpy(), ts.detach().numpy(), predicts.flatten().detach().numpy())
@@ -589,7 +528,7 @@ if __name__ == '__main__':
     
     def plotIO2(model):
 
-        t1: float = 5
+        t1: float = 1
         t2: float = 1
         outT: float = 9
 
@@ -608,19 +547,19 @@ if __name__ == '__main__':
         genRndomSineExampleIO = lambda: randomSineExampleIO(t1, t2)
         x1, x2, y = genRndomSineExampleIO()
         xs, ys = createExamples(ts, x1, x2, y)
-        ys[ts <= max(t1, t2)] = 0
-        # print(xs)
+        ys[ts < max(t1, t2)] = 0
+        print(xs)
+        print(ys)
         predicts = model(xs.unsqueeze(0))
         print(predicts)
         plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
         plt.plot(ts.detach().numpy(), ys.flatten().detach().numpy(), ts.detach().numpy(), predicts.flatten().detach().numpy(), marker='o')
         plt.show()
     
-    def plotIO1(model):
+    def plotIO3(model):
 
         t1: float = 1
         t2: float = 1
-        outT: float = 9
 
         seq_length = 20
         ts = torch.arange(0, seq_length)
@@ -648,7 +587,7 @@ if __name__ == '__main__':
         plt.plot(ts.detach().numpy(), ys.flatten().detach().numpy(), ts.detach().numpy(), predicts.flatten().detach().numpy(), marker='o')
         plt.show()
 
-    plotIO2(model)
+    plotIO1(model)
 
 
 
