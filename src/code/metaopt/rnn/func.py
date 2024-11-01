@@ -1,11 +1,9 @@
-import itertools
 from typing import TypeVar, Callable, Generic, Generator, Iterator
 from functools import reduce
 from toolz.curried import curry, map, concat, compose
-import torch
+import itertools
 import numpy as np
-from torch.nn import functional as f
-
+import torch 
 
 T = TypeVar('T') 
 X = TypeVar('X')
@@ -66,16 +64,8 @@ def mapTuple1(f, pair):
     return (f(a), b)
 
 
-listmap = compose(list, map)
+cycle_efficient = compose(itertools.chain.from_iterable, itertools.repeat)
 
-tensormap = compose(torch.tensor, listmap)
-
-
-def jacobian(_os, _is):
-    I_N = torch.eye(len(_os))
-    def get_vjp(v):
-        return torch.autograd.grad(_os, _is, v)
-    return torch.vmap(get_vjp)(I_N)
 
 
 @curry
@@ -100,15 +90,10 @@ def initializeParametersIO(n_in: int, n_h: int, n_out: int
 
     return _W_rec, _W_in, _b_rec, _W_out, _b_out
 
-@curry
-def rnnTransition(W_in, W_rec, b_rec, activation, alpha, h, x):
-    return (1 - alpha) * h + alpha * activation(f.linear(x, W_in, None) + f.linear(h, W_rec, b_rec))
-
-
 
 linear_ = curry(lambda w, b, h: f.linear(h, w, b))
 
-cycle_efficient = compose(itertools.chain.from_iterable, itertools.repeat)
 
-def getEpochs(numEpochs, *dataLoaders):
-    return itertools.chain.from_iterable((zip(*dataLoaders) for _ in range(numEpochs)))
+@curry
+def rnnTransition(W_in, W_rec, b_rec, activation, alpha, h, x):
+    return (1 - alpha) * h + alpha * activation(f.linear(x, W_in, None) + f.linear(h, W_rec, b_rec))

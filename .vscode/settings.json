@@ -16,6 +16,7 @@
         "oderwat.indent-rainbow"
     ],
     "python.analysis.extraPaths": [
-        "./src/code/metaopt/mnist"
+        "./src/code/metaopt/mnist",
+        "./src/code/metaopt/rnn"
     ],
 }
