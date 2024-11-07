@@ -5,11 +5,17 @@ from toolz.curried import curry, map, concat, compose
 import torch
 import numpy as np
 from torch.nn import functional as f
+from operator import add
 
 
 T = TypeVar('T') 
 X = TypeVar('X')
 Y = TypeVar('Y')
+A = TypeVar('A') 
+B = TypeVar('B')
+C = TypeVar('C')
+D = TypeVar('D')
+
 
 @curry
 def scan(f: Callable[[T, X], T], state: T, it: Iterator[X]) -> Generator[T, None, None]:
@@ -18,6 +24,15 @@ def scan(f: Callable[[T, X], T], state: T, it: Iterator[X]) -> Generator[T, None
         state = f(state, x)
         yield state
 
+@curry 
+def flip(f: Callable[[A, B], C]) -> Callable[[B, A], C]:
+    def _flip(b, a):
+        return f(a, b)
+    return _flip
+
+@curry 
+def const(x: X, _: Y) -> X:
+    return x
 
 @curry
 def uncurry(f: Callable[[T, X], Y]) -> Callable[[tuple[T, X]], Y]:
@@ -51,6 +66,8 @@ def snd(pair: tuple[X, Y]) -> Y:
 
 
 reduce_ = curry(lambda fn, x, xs: reduce(fn, xs, x))
+
+foldr = curry(lambda fn, xs, x: reduce(fn, xs, x))
 
 
 # reverse of sequenceA? which doesn't exist so custom logic
@@ -112,3 +129,56 @@ cycle_efficient = compose(itertools.chain.from_iterable, itertools.repeat)
 
 def getEpochs(numEpochs, *dataLoaders):
     return itertools.chain.from_iterable((zip(*dataLoaders) for _ in range(numEpochs)))
+
+
+
+
+
+"""unfusei :: (a -> b -> b) -> (c -> b -> b) -> (a, c) -> b -> b
+unfusei f g (x, y) = f x . g y -- use to combine when inputs are different"""
+
+@curry 
+def multiplex(f: Callable[[A, B], B], g: Callable[[C, B], B], pair: tuple[A, C]) -> Callable[[B], B]:
+    x, y = pair 
+    return compose(g(y), f(x))
+
+"""trans :: (Foldable t) => (a -> b -> b) -> t a -> b -> b
+trans fn = foldr ((.) . fn) id"""
+
+# @curry 
+# def trans(fn: Callable[[A, B], B], xs: Iterator[A], b0: B) -> B:
+#     return reduce_(compose(compose, fn), lambda x: x, b0, xs)
+
+
+# print(foldr(add, range(1, 4)))
+
+
+# @curry
+# def dstep(f: Callable[[A, B], C], g: Callable[[C, B], D], pair: tuple[A, B]) -> tuple[C, D] :
+#     """
+#     dstep :: (a1 -> b1 -> a2) -> (a2 -> b1 -> b2) -> (a1, b1) -> (a2, b2)
+#     dstep f g (a, b) = let a' = f a b
+#                         b' = g a' b
+#                     in (a', b')
+#     """
+#     a, b = pair 
+#     a_ = f(a, b)
+#     b_ = g(a_, b)
+#     return (a_, b_)
+
+
+# """ yy :: (a -> a1 -> b1 -> a2) -> (a2 -> b1 -> b2) -> a -> (a1, b1) -> (a2, b2)
+# yy f g = f &&& const g >>> uncurry test
+# fmapCombine :: (c1 -> c' -> c2) -> (a -> c1) -> c' -> a -> c2
+#  """
+# """ &&& = \f g x -> (f x, g x) """
+
+# @curry
+# def AAA(f: Callable[[A], B], g: Callable[[A], C], x: A) -> tuple[B, C]:
+#     return (f(x), g(x))
+
+# @curry 
+# def fmapCombine(combiner: Callable[[A, B], C], combinable: Callable[[D], A], combinee: B) -> Callable[[D], C]:
+#     return compose(uncurry(combiner), AAA(combinable, const(combinee)))
+
+# # the main reason why I want this scaffolding is because I want to code oho once and I can always attach it to any function :: x -> hp -> p -> p without writing any extra code. 

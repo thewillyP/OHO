@@ -495,15 +495,13 @@ if __name__ == '__main__':
     args.numVl = 1000
     args.numTe = 200
 
-    # filenames = [f'exp1/trial{i}' for i in range(100)]
-
-    filename = arg1 = sys.argv[1]
+    filenames = [f'exp3/trial{i}' for i in range(24)]
 
 
     is_cuda = args.is_cuda
 
-    # for filename in filenames:
-    model = main(filename, args, ifold=ifold, is_cuda=is_cuda)
+    for filename in filenames:
+        model = main(filename, args, ifold=ifold, is_cuda=is_cuda)
 
     # print(model.b_rec_, model.b_out_)
 
