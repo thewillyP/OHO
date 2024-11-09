@@ -1,27 +1,12 @@
 from abc import ABCMeta, abstractmethod
 from functools import reduce
 from typing import Callable, List, TypeVar, Generic, Iterator, Union
-from toolz.curried import curry, compose
+from toolz.curried import curry, compose, map
 from torch.nn import functional as f
 import torch
 from dataclasses import dataclass
 from func import *
 
-
-"""
-1. I don't have diamond inheritance issues because I never override functions. 
-2. I will never create a diamond bc my use case only has linear. 
-Yes I will have to implement an instance for (a, b) different from (a,b,c) but it is
-a) located in one place so more manageable
-b) Maybe intrinsic. WHat is the canonical way to get and set different tuples that are extended on each other? That is unclear. 
-
-This buys me generality. I just have to code one function for my update guys and that's it. All I need after is to fold them and boom. I'm done. 
-oho is literally the dream function.
-I'm basically doing dependency injection. 
-
-Oh what if I want to reuse a guy I created? That's no longer a valid question anymore because all I need to do is pass in a different environment. 
-
-"""
 
 T = TypeVar('T')
 E = TypeVar('E')
@@ -190,36 +175,12 @@ class HyperParameterQuadrupleInterpreter(HasHyperParameter[tuple[A, B, C, D], D]
 class QuadrupleInterpreter(ActivationQuadrupleInterpreter, LossQuadrupleInterpreter, ParameterQuadrupleInterpreter, HyperParameterQuadrupleInterpreter):
     pass
 
-
-# class IsMonoid(Generic[T], metaclass=ABCMeta):
-#     @abstractmethod
-#     def mempty(self) -> T:
-#         pass
-
-#     @abstractmethod
-#     def mappend(self, x: T, y: T) -> T:
-#         pass
-
-# class MonoidIntInterpreter(IsMonoid[int]):
-#     def mempty(self) -> int:
-#         return 0
-
-#     def mappend(self, x: int, y: int) -> int:
-#         return x + y
-
     
 # downside is that I need to create a whole new class that inherits all the instantiations. 
 # I will just maintain and reedit my god instance interpreter. Best compromise. Not truly extensible but I have full control. 
 
 # ============== Functions ==============
 
-"""
-3 patterns
-1) fold 
-2) fuse
-3) append
-
-"""
 
 def foldr(f: Callable[[A, B], B]) -> Callable[[Iterator[A], B], B]:
     def foldr_(xs: Iterator[A], x: B) -> B:
@@ -245,13 +206,6 @@ def fmapPrefix(g: Callable[[A], B], f: Callable[[X, B], C]) -> Callable[[X, A], 
     return fmapPrefix_
 
 
-def fuseSnd(f: Callable[[A, C], C], g: Callable[[C], D], h: Callable[[D, C], C]) -> Callable[[A, C], C]:
-    """ composeSnd(offline, liftA2(apply, curry(flip(paramTrans)), t.getActivation)) """
-    def fuseSnd_(a: A, c: C) -> C:
-        c_ = f(a, c)
-        return h(g(c_), c_)
-    return fuseSnd_
-
 # ============== Expressions ==============
 #!! Warning. Union is wrong. Should be intersection. Python no cap so use Union for type method inference. 
 # These are a proof of concept
@@ -274,149 +228,31 @@ def learnStep(t: Union[HasParameter[ENV, P], HasLoss[ENV, L]]
     lossFn = fuse(prediction, lossStep)
     return fmapSuffix(paramStep, lossFn)
 
-def resetActivation(t: Union[HasActivation[ENV, A]]
+def resetRnnActivation(t: Union[HasActivation[ENV, A]]
                 , resetee:  Callable[[X, ENV], ENV]
                 , actv0: A) -> Callable[[X, ENV], ENV]:
     def reset_(env: ENV) -> ENV:
         return t.putActivation(actv0, env)
     return fmapPrefix(reset_, resetee)
 
+def resetLoss(t: Union[HasLoss[ENV, L]]  # TODO: generalize this
+                , resetee:  Callable[[X, ENV], ENV]
+                , loss0: A) -> Callable[[X, ENV], ENV]:
+    def reset_(env: ENV) -> ENV:
+        return t.putLoss(loss0, env)
+    return fmapPrefix(reset_, resetee)
 
-def repeatWithReset(t: Union[HasActivation[ENV, A], HasParameter[ENV, P], HasLoss[ENV, L]]
+
+
+def repeatRnnWithReset(t: Union[HasActivation[ENV, A], HasParameter[ENV, P], HasLoss[ENV, L]]
                 , repeatee: Callable[[X, ENV], ENV]) -> Callable[[Iterator[X], ENV], ENV]:
     def repeat_(xs: Iterator[X], env: ENV) -> ENV:
         a0 = t.getActivation(env)
-        resetter = resetActivation(t, repeatee, a0)
+        l0 = t.getLoss(env)
+        resetter = resetRnnActivation(t, repeatee, a0)
+        resetter = resetLoss(t, resetter, l0)
         return foldr(resetter)(xs, env)
     return repeat_
-
-
-# def stepLiteral0(param1: Callable[[ENV], T], updateEnv: Callable[[A, ENV], ENV], stepFn: Callable[[X, T], A]) -> Callable[[X, ENV], ENV]:
-#     def stepLiteral0_(x: X, env: ENV) -> ENV:
-#         t = param1(env)
-#         b = stepFn(x, t)
-#         return updateEnv(b, env)
-#     return stepLiteral0_
-
-# def stepLiteral1(param1: Callable[[ENV], T], param2: Callable[[ENV], E], updateEnv: Callable[[A, ENV], ENV], stepFn: Callable[[X, T, E], A]) -> Callable[[X, ENV], ENV]:
-#     def stepLiteral_(x: X, env: ENV) -> ENV:
-#         t = param1(env)
-#         e = param2(env)
-#         t_ = stepFn(x, t, e)
-#         return updateEnv(t_, env)
-#     return stepLiteral_
-
-# def stepLiteral2(param1: Callable[[ENV], T], param2: Callable[[ENV], E], param3: Callable[[ENV], A], updateEnv: Callable[[B, ENV], ENV], stepFn: Callable[[X, T, E, A], B]) -> Callable[[X, ENV], ENV]:
-#     def stepLiteral2_(x: X, env: ENV) -> ENV:
-#         t = param1(env)
-#         e = param2(env)
-#         a = param3(env)
-#         b = stepFn(x, t, e, a)
-#         return updateEnv(b, env)
-#     return stepLiteral2_
-
-
-
-# def rnnActivationStep(t: Union[HasActivation[ENV, T], HasParameter[ENV, E]], rnnT: Callable[[X, E, T], T]) -> Callable[[X, ENV], ENV]:
-#     return stepLiteral1(t.getActivation, t.getParameter, t.putActivation, rnnT)
-
-# # paramStep(t, ffwdParamStep) = feed forward parameter update
-# # paramStep(t, rnnParamStep) = rnn parameter update. Takes hidden state this time. 
-# def paramStep(t: Union[HasParameter[ENV, E]], paramT: Callable[[X, E], E]) -> Callable[[X, ENV], ENV]:
-#     def paramStep_(x: X, env: ENV) -> ENV:
-#         p = t.getParameter(env)
-#         p_ = paramT(x, p)
-#         return t.putParameter(p_, env)
-#     return paramStep_
-
-
-# def metaStep(t: Union[HasParameter[ENV, T], HasHyperParameter[ENV, E]], ohoT: Callable[[X, T, E], E]) -> Callable[[X, ENV], ENV]:
-#     return stepLiteral1(t.getParameter, t.getHyperParameter, t.putHyperParameter, ohoT)
-
-
-# def onlineRnnStep(t: Union[HasActivation[ENV, T], HasParameter[ENV, E]], rnnT: Callable[[X, E, T], T], paramT: Callable[[T, E], E]) -> Callable[[X, ENV], ENV]:
-#     rnnTrans = rnnActivationStep(t, rnnT)
-#     paramTrans = paramStep(t, paramT)
-#     return fuseSnd(rnnTrans, t.getActivation, paramTrans)
-#     # def onlineRnn_(x: X, env: ENV) -> ENV:  # not using point free style means prone to errors like mixing up env, env_ but not pythonic + less type checking so whatevs
-#     #     env_ = rnnTrans(x, env)
-#     #     a = t.getActivation(env_)
-#     #     return paramTrans(a, env_)
-#     # return onlineRnn_
-
-# def onlineRnn(t: Union[HasActivation[ENV, T], HasParameter[ENV, E]], rnnT: Callable[[X, E, T], T], paramT: Callable[[T, E], E]) -> Callable[[Iterator[X], ENV], ENV]:
-#     rnnTrans = onlineRnnStep(t, rnnT, paramT)
-#     return foldr(rnnTrans)
-
-# def offlineRnnActivation(t: Union[HasActivation[ENV, T]], rnnT: Callable[[X, E, T], T]) -> Callable[[Iterator[X], ENV], ENV]:
-#     # rnnTrans = onlineRnnStep(t, rnnT, lambda _, p: p)  # shows equivalence to onlineRnn. Want to get rid of parameter update capability though so not use.
-#     rnnTrans = rnnActivationStep(t, rnnT)
-#     return foldr(rnnTrans)
-
-# def offlineRnn(t: Union[HasActivation[ENV, T], HasParameter[ENV, E]], rnnT: Callable[[X, E, T], T], paramT: Callable[[T, E], E]) -> Callable[[Iterator[X], ENV], ENV]:
-#     offline = offlineRnnActivation(t, rnnT)
-#     paramTrans = paramStep(t, paramT)
-#     return fuseSnd(offline, t.getActivation, paramTrans)
-
-# # what's a good name for doing online first with paramT1, then offline with paramT2?
-# def onlineThenOffline(t: Union[HasActivation[ENV, T], HasParameter[ENV, E]], rnnT: Callable[[X, E, T], T], paramT1: Callable[[T, E], E], paramT2: Callable[[T, E], E]) -> Callable[[Iterator[X], ENV], ENV]:
-#     offline = onlineRnn(t, rnnT, paramT1)
-#     paramTrans = paramStep(t, paramT2)
-#     return fuseSnd(offline, t.getActivation, paramTrans)
-
-# def offlineRnnOho(t: Union[HasActivation[ENV, T], HasParameter[ENV, E], HasHyperParameter[ENV, A]], rnnT: Callable[[X, E, T], T], paramT: Callable[[T, E], E], ohoT: Callable[[Y, T, A], A]) -> Callable[[tuple[Iterator[X], Y], ENV], ENV]:
-#     offline = offlineRnn(t, rnnT, paramT)
-#     ohoTrans = metaStep(t, ohoT)
-#     return fuse(offline, ohoTrans)
-
-# def onlineMetaRnnStep(t: Union[HasActivation[ENV, T], HasParameter[ENV, E], HasHyperParameter[ENV, A]], rnnT: Callable[[X, E, T], T], paramT: Callable[[T, E], E], ohoT: Callable[[Y, T, A], A]) -> Callable[[tuple[X, Y], ENV], ENV]:
-#     online = onlineRnnStep(t, rnnT, paramT)
-#     ohoTrans = metaStep(t, ohoT)
-#     return fuse(online, ohoTrans)
-
-# def onlineMetaRnn(t: Union[HasActivation[ENV, T], HasParameter[ENV, E], HasHyperParameter[ENV, A]], rnnT: Callable[[X, E, T], T], paramT: Callable[[T, E], E], ohoT: Callable[[Y, T, A], A]) -> Callable[[Iterator[tuple[X, Y]], ENV], ENV]:
-#     online = onlineMetaRnnStep(t, rnnT, paramT, ohoT)
-#     return foldr(online)
-
-
-# def rnnLossSeq(t: Union[HasActivation[ENV, T], HasParameter[ENV, E], HasLoss[ENV, B]], actvT: Callable[[X, E, T], T], lossT: Callable[[Y, E, T, B], B]) -> Callable[[tuple[X, Y], ENV], ENV]:
-#     actv = stepLiteral1(t.getActivation, t.getParameter, t.putActivation, actvT)
-#     def lossStep_(y: Y, env: ENV) -> ENV:
-#         a = t.getActivation(env)
-#         p = t.getParameter(env)
-#         l = t.getLoss(env)
-#         b_ = lossT(y, p, a, l)
-#         return t.putLoss(b_, env)
-#     return fuse(actv, lossStep_)
-
-# I should make these combinations in line, since there's a combinatorial explosion of all posible combinations. I have the pattern, just need to assemble on demand. 
-
-# If I need to add oho to offline then online,
-"""
-TODO
-0) fix union types to be interesection types - python no union types
-1) offline rnn - ✅
-2) offline rnn + oho - ✅
-3) online rnn + oho - ✅
-4) feedforward + oho
-pytorch implementation should just be 
-a) pass jacobian or something
-b) pass model
-
-rnnParam step
-fuse two ways, 
-update after offline. this is get the backprop graph and call autograd on it.
-collect info during offline, then update after. This does require me fusing some info during offlineRnn, so not true offline. 
-let's make online rnn first, then see if the above is a special case
-"""
-
-
-
-
-
-
-# activationT = rnnT(f.relu)
-# test2 = rnnActivationStep(TripletInterpreter(), test)
 
 
 
@@ -427,11 +263,75 @@ from torch import nn
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import TypeVar, Callable, Generic, Generator, Iterator
-from toolz.curried import curry, compose, identity, take_nth, accumulate, apply, map, concat, take, drop, mapcat, last
 from functools import reduce
 import torchvision
 import torchvision.transforms as transforms
 from itertools import tee
+
+
+
+PARAM =  tuple[torch.Tensor
+            , torch.Tensor
+            , torch.Tensor
+            , torch.Tensor
+            , torch.Tensor
+            , float]
+
+MODEL = VanillaRnnState[torch.Tensor, torch.Tensor, PARAM]
+
+
+def rnnTrans(activation: Callable) -> Callable[[torch.Tensor, tuple[torch.Tensor, torch.Tensor, torch.Tensor, float], torch.Tensor], torch.Tensor]:
+    def rnnTrans_(x: torch.Tensor, param: tuple[torch.Tensor, torch.Tensor, torch.Tensor, float], h: torch.Tensor) -> torch.Tensor:
+        W_in, W_rec, b_rec, alpha = param
+        return (1 - alpha) * h + alpha * activation(f.linear(x, W_in, None) + f.linear(h, W_rec, b_rec))
+    return rnnTrans_
+
+def activationTrans(activationFn: Callable[[torch.Tensor], torch.Tensor]):
+    def activationTrans_(t: Union[HasActivation[MODEL, torch.Tensor], HasParameter[MODEL, PARAM]]) -> Callable[[torch.Tensor, MODEL], MODEL]:
+        def activationTrans__(x: torch.Tensor, env: MODEL) -> MODEL:
+            a = t.getActivation(env)
+            W_rec, W_in, b_rec, _, _, alpha = t.getParameter(env)
+            a_ = rnnTrans(activationFn)(x, (W_in, W_rec, b_rec, alpha), a)
+            return t.putActivation(a_, env)
+        return activationTrans__
+    return activationTrans_
+
+def predictTrans(t: Union[HasActivation[MODEL, torch.Tensor], HasParameter[MODEL, PARAM]]) -> Callable[[MODEL], tuple[MODEL, torch.Tensor]]:
+    def predictTrans_(env: MODEL) -> tuple[MODEL, torch.Tensor]:
+        a = t.getActivation(env)
+        _, _, _, W_out, b_out, _ = t.getParameter(env)
+        return env, f.linear(a, W_out, b_out)
+    return predictTrans_
+
+def lossTrans(t: Union[HasLoss[MODEL, torch.Tensor]]) -> Callable[[torch.Tensor, tuple[MODEL, torch.Tensor]], MODEL]:
+    def lossTrans_(y: torch.Tensor, pair: tuple[MODEL, torch.Tensor]) -> MODEL:
+        env, prediction = pair
+        loss = f.cross_entropy(prediction, y) + t.getLoss(env)
+        return t.putLoss(loss, env)
+    return lossTrans_
+
+def parameterTrans(optimizer):
+    def parameterTrans_(t: Union[HasParameter[MODEL, PARAM], HasLoss[MODEL, torch.Tensor]]) -> Callable[[MODEL], MODEL]:
+        def parameterTrans__(env: MODEL) -> MODEL:
+            optimizer.zero_grad() 
+            loss = t.getLoss(env)
+            loss.backward()
+            optimizer.step()  # will actuall physically spooky mutate the param so no update needed. 
+            print (f'Loss: {loss.item():.10f}')
+            return env
+        return parameterTrans__
+    return parameterTrans_
+
+def getRnn(t: VanillaRnnStateInterpreter, activationFn) -> Callable[[Iterator[torch.Tensor], MODEL], tuple[MODEL, torch.Tensor]]:
+    return offlineRnnPredict(t, activationTrans(activationFn), predictTrans)
+
+def trainRnn(t: VanillaRnnStateInterpreter
+                , optimizer
+                , rnn: Callable[[Iterator[torch.Tensor], MODEL], tuple[MODEL, torch.Tensor]]) -> Callable[[Iterator[tuple[Iterator[torch.Tensor], torch.Tensor]], MODEL], MODEL]:
+    learn = learnStep(t, rnn, lossTrans, parameterTrans(optimizer))
+    return repeatRnnWithReset(t, learn)
+
+
 
 
 
@@ -465,69 +365,12 @@ test_dataset = torchvision.datasets.MNIST(root='./data',
 train_loader = torch.utils.data.DataLoader(dataset=train_dataset, 
                                         batch_size=batch_size, 
                                         shuffle=True)
-
 test_loader = torch.utils.data.DataLoader(dataset=test_dataset, 
                                         batch_size=batch_size, 
                                         shuffle=False)
-
-
-
-
-PARAM =  tuple[torch.Tensor
-            , torch.Tensor
-            , torch.Tensor
-            , torch.Tensor
-            , torch.Tensor
-            , float]
-
-MODEL = VanillaRnnState[torch.Tensor, torch.Tensor, PARAM]
-
-
-def rnnTrans(activation: Callable) -> Callable[[torch.Tensor, tuple[torch.Tensor, torch.Tensor, torch.Tensor, float], torch.Tensor], torch.Tensor]:
-    def rnnTrans_(x: torch.Tensor, param: tuple[torch.Tensor, torch.Tensor, torch.Tensor, float], h: torch.Tensor) -> torch.Tensor:
-        W_in, W_rec, b_rec, alpha = param
-        return (1 - alpha) * h + alpha * activation(f.linear(x, W_in, None) + f.linear(h, W_rec, b_rec))
-    return rnnTrans_
-
-def activationTrans(t: Union[HasActivation[MODEL, torch.Tensor], HasParameter[MODEL, PARAM]]) -> Callable[[torch.Tensor, MODEL], MODEL]:
-    def activationTrans_(x: torch.Tensor, env: MODEL) -> MODEL:
-        a = t.getActivation(env)
-        W_rec, W_in, b_rec, _, _, alpha = t.getParameter(env)
-        a_ = rnnTrans(f.relu)(x, (W_in, W_rec, b_rec, alpha), a)
-        return t.putActivation(a_, env)
-    return activationTrans_
-
-def predictTrans(t: Union[HasActivation[MODEL, torch.Tensor], HasParameter[MODEL, PARAM]]) -> Callable[[MODEL], tuple[MODEL, torch.Tensor]]:
-    def predictTrans_(env: MODEL) -> torch.Tensor:
-        a = t.getActivation(env)
-        _, _, _, W_out, b_out, _ = t.getParameter(env)
-        return env, f.linear(a, W_out, b_out)
-    return predictTrans_
-
-def lossTrans(t: Union[HasLoss[MODEL, torch.Tensor]]) -> Callable[[Y, tuple[MODEL, torch.Tensor]], MODEL]:
-    def lossTrans_(y: torch.Tensor, pair: tuple[MODEL, torch.Tensor]) -> MODEL:
-        env, prediction = pair
-        loss = f.cross_entropy(prediction, y) + t.getLoss(env)
-        return t.putLoss(loss, env)
-    return lossTrans_
-
-def parameterTrans(optimizer):
-    def parameterTrans_(t: Union[HasParameter[MODEL, PARAM], HasLoss[MODEL, torch.Tensor]]) -> Callable[[MODEL], MODEL]:
-        def parameterTrans__(env: MODEL) -> MODEL:
-            optimizer.zero_grad() 
-            loss = t.getLoss(env)
-            loss.backward()
-            optimizer.step()  # will actuall physically spooky mutate the param so no update needed. 
-            print (f'Loss: {loss.item():.10f}')
-            return env
-        return parameterTrans__
-    return parameterTrans_
-
-
-def trainProgram(t: VanillaRnnStateInterpreter, optimizer) -> Callable[[Iterator[tuple[Iterator[torch.Tensor], torch.Tensor]], MODEL], MODEL]:
-    rnn = offlineRnnPredict(t, activationTrans, predictTrans)
-    learn = learnStep(t, rnn, lossTrans, parameterTrans(optimizer))
-    return repeatWithReset(t, learn)
+cleanData = map(lambda pair: (pair[0].squeeze(1).permute(1, 0, 2), pair[1])) # origin shape: [N, 1, 28, 28] -> resized: [28, N, 28]
+# train_loader = cleanData(train_loader)
+# test_loader = cleanData(test_loader)
 
 
 
@@ -538,29 +381,35 @@ state0 = VanillaRnnState(torch.zeros(batch_size, hidden_size, dtype=torch.float3
                         , 0
                         , (W_rec_, W_in_, b_rec_, W_out_, b_out_, alpha_))
 
+rnn = getRnn(VanillaRnnStateInterpreter(), activation_)
+trainFn = trainRnn(VanillaRnnStateInterpreter(), optimizer, rnn)
+trainEpochsFn = repeatRnnWithReset(VanillaRnnStateInterpreter(), trainFn)
+
+epochs = [cleanData(train_loader) for _ in range(num_epochs)]
+stateTrained = trainEpochsFn(epochs, state0)
 
 
 
 
-def predict(output, target):
-    _, predicted = torch.max(output.data, 1)
-    n_samples = target.size(0)
-    n_correct = (predicted == target).sum().item()
-    return (n_samples, n_correct)
+# def predict(output, target):
+#     _, predicted = torch.max(output.data, 1)
+#     n_samples = target.size(0)
+#     n_correct = (predicted == target).sum().item()
+#     return (n_samples, n_correct)
 
 
-accuracy = compose(   lambda pair: 100.0 * pair[1] / pair[0]
-                    , totalStatistic(predict, lambda res, pair: (res[0] + pair[0], res[1] + pair[1])))
+# accuracy = compose(   lambda pair: 100.0 * pair[1] / pair[0]
+#                     , totalStatistic(predict, lambda res, pair: (res[0] + pair[0], res[1] + pair[1])))
 
-with torch.no_grad():
-    xs_test, ys_test = tee(test_loader, 2)
-    xtream_test, targets_test = map(compose(lambda x: (x, None), fst), xs_test), map(snd, ys_test)
+# with torch.no_grad():
+#     xs_test, ys_test = tee(test_loader, 2)
+#     xtream_test, targets_test = map(compose(lambda x: (x, None), fst), xs_test), map(snd, ys_test)
 
-    def getReadout(pair):
-        h, (_, rd) = pair 
-        return rd(h)
-    testOuputs = compose( map(getReadout)
-                        , getOutputs((-1, h0, (pN, readoutN))))
-    print(accuracy(testOuputs, xtream_test, targets_test))
+#     def getReadout(pair):
+#         h, (_, rd) = pair 
+#         return rd(h)
+#     testOuputs = compose( map(getReadout)
+#                         , getOutputs((-1, h0, (pN, readoutN))))
+#     print(accuracy(testOuputs, xtream_test, targets_test))
 
 
