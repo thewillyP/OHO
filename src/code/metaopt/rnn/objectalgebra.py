@@ -423,6 +423,7 @@ test_loader = torch.utils.data.DataLoader(dataset=test_dataset,
 
 
 
+
 PARAM =  tuple[torch.Tensor
             , torch.Tensor
             , torch.Tensor
@@ -430,32 +431,49 @@ PARAM =  tuple[torch.Tensor
             , torch.Tensor
             , float]
 
+MODEL = VanillaRnnState[torch.Tensor, torch.Tensor, PARAM]
+
+
 def rnnTrans(activation: Callable) -> Callable[[torch.Tensor, tuple[torch.Tensor, torch.Tensor, torch.Tensor, float], torch.Tensor], torch.Tensor]:
     def rnnTrans_(x: torch.Tensor, param: tuple[torch.Tensor, torch.Tensor, torch.Tensor, float], h: torch.Tensor) -> torch.Tensor:
         W_in, W_rec, b_rec, alpha = param
         return (1 - alpha) * h + alpha * activation(f.linear(x, W_in, None) + f.linear(h, W_rec, b_rec))
     return rnnTrans_
 
-def activationTrans(x: torch.Tensor, p: PARAM, a: torch.Tensor) -> torch.Tensor:
-    W_rec, W_in, b_rec, _, _, alpha = p
-    return rnnTrans(f.relu)(x, (W_in, W_rec, b_rec, alpha), a)
+def activationTrans(t: Union[HasActivation[MODEL, torch.Tensor], HasParameter[MODEL, PARAM]]) -> Callable[[torch.Tensor, MODEL], MODEL]:
+    def activationTrans_(x: torch.Tensor, env: MODEL) -> MODEL:
+        a = t.getActivation(env)
+        W_rec, W_in, b_rec, _, _, alpha = t.getParameter(env)
+        a_ = rnnTrans(f.relu)(x, (W_in, W_rec, b_rec, alpha), a)
+        return t.putActivation(a_, env)
+    return activationTrans_
 
-def predict(p: PARAM, a: torch.Tensor) -> torch.Tensor:
-    _, _, _, W_out, b_out, _ = p
-    return f.linear(a, W_out, b_out)
+def predictTrans(t: Union[HasActivation[MODEL, torch.Tensor], HasParameter[MODEL, PARAM]]) -> Callable[[MODEL], tuple[MODEL, torch.Tensor]]:
+    def predictTrans_(env: MODEL) -> torch.Tensor:
+        a = t.getActivation(env)
+        _, _, _, W_out, b_out, _ = t.getParameter(env)
+        return env, f.linear(a, W_out, b_out)
+    return predictTrans_
 
-def lossTrans(y: torch.Tensor, prediction: torch.Tensor, prevLoss: torch.Tensor) -> torch.Tensor:
-    return f.cross_entropy(prediction, y) + prevLoss
+def lossTrans(t: Union[HasLoss[MODEL, torch.Tensor]]) -> Callable[[Y, tuple[MODEL, torch.Tensor]], MODEL]:
+    def lossTrans_(y: torch.Tensor, pair: tuple[MODEL, torch.Tensor]) -> MODEL:
+        env, prediction = pair
+        loss = f.cross_entropy(prediction, y) + t.getLoss(env)
+        return t.putLoss(loss, env)
+    return lossTrans_
 
-@curry
-def parameterTrans(   optimizer
-                    , loss: torch.Tensor
-                    , param: PARAM) -> PARAM:
-    optimizer.zero_grad() 
-    loss.backward()
-    optimizer.step()  # will actuall physically spooky mutate the param so no update needed. 
-    print (f'Loss: {loss.item():.10f}')
-    return param
+def parameterTrans(optimizer):
+    def parameterTrans_(t: Union[HasParameter[MODEL, PARAM], HasLoss[MODEL, torch.Tensor]]) -> Callable[[MODEL], MODEL]:
+        def parameterTrans__(env: MODEL) -> MODEL:
+            optimizer.zero_grad() 
+            loss = t.getLoss(env)
+            loss.backward()
+            optimizer.step()  # will actuall physically spooky mutate the param so no update needed. 
+            print (f'Loss: {loss.item():.10f}')
+            return env
+        return parameterTrans__
+    return parameterTrans_
+
 
 
 W_rec_, W_in_, b_rec_, W_out_, b_out_ = initializeParametersIO(input_size, hidden_size, num_classes)
@@ -465,12 +483,27 @@ state0 = VanillaRnnState(torch.zeros(batch_size, hidden_size, dtype=torch.float3
                         , 0
                         , (W_rec_, W_in_, b_rec_, W_out_, b_out_, alpha_))
 
-def classifyImage(t: Union[HasActivation[ENV, T], HasParameter[ENV, E]], actvT: Callable[[X, E, T], T], predictT: Callable[[E, T], B]) -> Callable[[Iterator[X], ENV], B]:
-    predictedImage = offlineRnnActivation(t, actvT)
-    def predictFn(xs: Iterator[X], env: ENV) -> B:
-        env_ = predictedImage(xs, env)
-        return predictT(t.getParameter(env_), t.getActivation(env_))
-    return predictFn
+
+def classifyImage(
+        t: Union[HasActivation[ENV, T], HasParameter[ENV, E]]
+        , actvT: Callable[[Union[HasActivation[ENV, T], HasParameter[ENV, E]]], Callable[[X, ENV], ENV]]
+        , predictT: Callable[[Union[HasParameter[ENV, E], HasActivation[ENV, T]]], Callable[[ENV,  tuple[ENV, A]]]]) -> Callable[[Iterator[X], ENV], tuple[ENV, A]]:
+    actvStep = actvT(t)
+    predictStep = predictT(t)
+    offline = foldr(actvStep)
+    def predict_(xs: Iterator[X], env: ENV) -> tuple[ENV, A]: # fmap (predictStep .) offline
+        env_ = offline(xs, env)
+        return predictStep(env_)
+    return predict_
+
+
+
+# def classifyImage(t: Union[HasActivation[ENV, T], HasParameter[ENV, E]], actvT: Callable[[X, E, T], T], predictT: Callable[[E, T], B]) -> Callable[[Iterator[X], ENV], B]:
+#     predictedImage = offlineRnnActivation(t, actvT)
+#     def predictFn(xs: Iterator[X], env: ENV) -> B:
+#         env_ = predictedImage(xs, env)
+#         return predictT(t.getParameter(env_), t.getActivation(env_))
+#     return predictFn
 
 def learnImage(t: Union[HasActivation[ENV, T], HasParameter[ENV, E], HasLoss[ENV, B]], actvT: Callable[[X, E, T], T], predictT: Callable[[E, T], C], lossT: Callable[[Y, C, B], B], paramT: Callable[[B, E], E]) -> Callable[[tuple[Iterator[X], Y], ENV], ENV]:
     predictedImage = offlineRnnActivation(t, actvT)
@@ -527,3 +560,4 @@ t2_dur: float = 0.99
 outT: float = 10
 st, et = 0., 11.
 addMemoryTask: Callable[[float], tuple[float, float, float]] = createAddMemoryTask(t1, t2, a, b, t1_dur, t2_dur, outT)
+
