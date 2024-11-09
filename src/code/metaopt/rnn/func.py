@@ -104,7 +104,7 @@ def compose2(f: Callable[[A], B], g: Callable[[B], C]) -> Callable[[A], C]:
         return g(f(a))
     return compose2_
 
-fmap = flip(compose2)
+# fmap = flip(compose2)
 
 
 

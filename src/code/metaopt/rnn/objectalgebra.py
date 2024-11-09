@@ -31,6 +31,11 @@ C = TypeVar('C')
 D = TypeVar('D')
 X = TypeVar('X')
 Y = TypeVar('Y')
+H = TypeVar('H')
+P = TypeVar('P')
+L = TypeVar('L')
+HP = TypeVar('HP')
+
 ENV = TypeVar('ENV')
 
 # ============== Typeclasses ==============
@@ -222,12 +227,23 @@ def foldr(f: Callable[[A, B], B]) -> Callable[[Iterator[A], B], B]:
     return foldr_
 
 
-def fuse(f: Callable[[A, B], B], g: Callable[[C, B], B]) -> Callable[[tuple[A, C], B], B]: 
-    """ f . g """
-    def fuse_(pair: tuple[A, C], x: B) -> B:
-        a, c = pair
-        return f(a, g(c, x))
+def fuse(f: Callable[[X, A], B], g: Callable[[Y, B], C]) -> Callable[[tuple[X, Y], A], C]: 
+    """ g . f """
+    def fuse_(pair: tuple[X, Y], a: A) -> C:
+        x, y = pair
+        return g(y, f(x, a))
     return fuse_
+
+def fmapSuffix(g: Callable[[B], C], f: Callable[[X, A], B]) -> Callable[[X, A], C]:
+    def fmapSuffix_(x: X, a: A) -> C:
+        return g(f(x, a))
+    return fmapSuffix_
+
+def fmapPrefix(g: Callable[[A], B], f: Callable[[X, B], C]) -> Callable[[X, A], C]:
+    def fmapPrefix_(x: X, a: A) -> C:
+        return f(x, g(a))
+    return fmapPrefix_
+
 
 def fuseSnd(f: Callable[[A, C], C], g: Callable[[C], D], h: Callable[[D, C], C]) -> Callable[[A, C], C]:
     """ composeSnd(offline, liftA2(apply, curry(flip(paramTrans)), t.getActivation)) """
@@ -240,105 +256,138 @@ def fuseSnd(f: Callable[[A, C], C], g: Callable[[C], D], h: Callable[[D, C], C])
 #!! Warning. Union is wrong. Should be intersection. Python no cap so use Union for type method inference. 
 # These are a proof of concept
 
+def offlineRnnPredict(
+        t: Union[HasActivation[ENV, A], HasParameter[ENV, P]]
+        , actvT: Callable[[Union[HasActivation[ENV, A], HasParameter[ENV, P]]], Callable[[X, ENV], ENV]]
+        , predictT: Callable[[Union[HasParameter[ENV, P], HasActivation[A, T]]], Callable[[ENV], tuple[ENV, T]]]) -> Callable[[Iterator[X], ENV], tuple[ENV, T]]:
+    actvStep = actvT(t)
+    predictStep = predictT(t)
+    offline = foldr(actvStep)
+    return fmapSuffix(predictStep, offline)
 
-def stepLiteral0(param1: Callable[[ENV], T], updateEnv: Callable[[A, ENV], ENV], stepFn: Callable[[X, T], A]) -> Callable[[X, ENV], ENV]:
-    def stepLiteral0_(x: X, env: ENV) -> ENV:
-        t = param1(env)
-        b = stepFn(x, t)
-        return updateEnv(b, env)
-    return stepLiteral0_
+def learnStep(t: Union[HasParameter[ENV, P], HasLoss[ENV, L]]
+            , prediction: Callable[[X, ENV], tuple[ENV, T]]
+            , lossT: Callable[[Union[HasLoss[ENV, L]]], Callable[[Y, tuple[ENV, T]], ENV]]
+            , paramT: Callable[[Union[HasParameter[ENV, P], HasLoss[ENV, L]]], Callable[[ENV], ENV]]) -> Callable[[tuple[X, Y], ENV], ENV]:
+    lossStep = lossT(t)
+    paramStep = paramT(t)
+    lossFn = fuse(prediction, lossStep)
+    return fmapSuffix(paramStep, lossFn)
 
-def stepLiteral1(param1: Callable[[ENV], T], param2: Callable[[ENV], E], updateEnv: Callable[[A, ENV], ENV], stepFn: Callable[[X, T, E], A]) -> Callable[[X, ENV], ENV]:
-    def stepLiteral_(x: X, env: ENV) -> ENV:
-        t = param1(env)
-        e = param2(env)
-        t_ = stepFn(x, t, e)
-        return updateEnv(t_, env)
-    return stepLiteral_
-
-def stepLiteral2(param1: Callable[[ENV], T], param2: Callable[[ENV], E], param3: Callable[[ENV], A], updateEnv: Callable[[B, ENV], ENV], stepFn: Callable[[X, T, E, A], B]) -> Callable[[X, ENV], ENV]:
-    def stepLiteral2_(x: X, env: ENV) -> ENV:
-        t = param1(env)
-        e = param2(env)
-        a = param3(env)
-        b = stepFn(x, t, e, a)
-        return updateEnv(b, env)
-    return stepLiteral2_
-
-
+def resetActivation(t: Union[HasActivation[ENV, A]]
+                , resetee:  Callable[[X, ENV], ENV]
+                , actv0: A) -> Callable[[X, ENV], ENV]:
+    def reset_(env: ENV) -> ENV:
+        return t.putActivation(actv0, env)
+    return fmapPrefix(reset_, resetee)
 
 
-def rnnActivationStep(t: Union[HasActivation[ENV, T], HasParameter[ENV, E]], rnnT: Callable[[X, E, T], T]) -> Callable[[X, ENV], ENV]:
-    return stepLiteral1(t.getActivation, t.getParameter, t.putActivation, rnnT)
-
-# paramStep(t, ffwdParamStep) = feed forward parameter update
-# paramStep(t, rnnParamStep) = rnn parameter update. Takes hidden state this time. 
-def paramStep(t: Union[HasParameter[ENV, E]], paramT: Callable[[X, E], E]) -> Callable[[X, ENV], ENV]:
-    def paramStep_(x: X, env: ENV) -> ENV:
-        p = t.getParameter(env)
-        p_ = paramT(x, p)
-        return t.putParameter(p_, env)
-    return paramStep_
+def repeatWithReset(t: Union[HasActivation[ENV, A], HasParameter[ENV, P], HasLoss[ENV, L]]
+                , repeatee: Callable[[X, ENV], ENV]) -> Callable[[Iterator[X], ENV], ENV]:
+    def repeat_(xs: Iterator[X], env: ENV) -> ENV:
+        a0 = t.getActivation(env)
+        resetter = resetActivation(t, repeatee, a0)
+        return foldr(resetter)(xs, env)
+    return repeat_
 
 
-def metaStep(t: Union[HasParameter[ENV, T], HasHyperParameter[ENV, E]], ohoT: Callable[[X, T, E], E]) -> Callable[[X, ENV], ENV]:
-    return stepLiteral1(t.getParameter, t.getHyperParameter, t.putHyperParameter, ohoT)
+# def stepLiteral0(param1: Callable[[ENV], T], updateEnv: Callable[[A, ENV], ENV], stepFn: Callable[[X, T], A]) -> Callable[[X, ENV], ENV]:
+#     def stepLiteral0_(x: X, env: ENV) -> ENV:
+#         t = param1(env)
+#         b = stepFn(x, t)
+#         return updateEnv(b, env)
+#     return stepLiteral0_
+
+# def stepLiteral1(param1: Callable[[ENV], T], param2: Callable[[ENV], E], updateEnv: Callable[[A, ENV], ENV], stepFn: Callable[[X, T, E], A]) -> Callable[[X, ENV], ENV]:
+#     def stepLiteral_(x: X, env: ENV) -> ENV:
+#         t = param1(env)
+#         e = param2(env)
+#         t_ = stepFn(x, t, e)
+#         return updateEnv(t_, env)
+#     return stepLiteral_
+
+# def stepLiteral2(param1: Callable[[ENV], T], param2: Callable[[ENV], E], param3: Callable[[ENV], A], updateEnv: Callable[[B, ENV], ENV], stepFn: Callable[[X, T, E, A], B]) -> Callable[[X, ENV], ENV]:
+#     def stepLiteral2_(x: X, env: ENV) -> ENV:
+#         t = param1(env)
+#         e = param2(env)
+#         a = param3(env)
+#         b = stepFn(x, t, e, a)
+#         return updateEnv(b, env)
+#     return stepLiteral2_
 
 
-def onlineRnnStep(t: Union[HasActivation[ENV, T], HasParameter[ENV, E]], rnnT: Callable[[X, E, T], T], paramT: Callable[[T, E], E]) -> Callable[[X, ENV], ENV]:
-    rnnTrans = rnnActivationStep(t, rnnT)
-    paramTrans = paramStep(t, paramT)
-    return fuseSnd(rnnTrans, t.getActivation, paramTrans)
-    # def onlineRnn_(x: X, env: ENV) -> ENV:  # not using point free style means prone to errors like mixing up env, env_ but not pythonic + less type checking so whatevs
-    #     env_ = rnnTrans(x, env)
-    #     a = t.getActivation(env_)
-    #     return paramTrans(a, env_)
-    # return onlineRnn_
 
-def onlineRnn(t: Union[HasActivation[ENV, T], HasParameter[ENV, E]], rnnT: Callable[[X, E, T], T], paramT: Callable[[T, E], E]) -> Callable[[Iterator[X], ENV], ENV]:
-    rnnTrans = onlineRnnStep(t, rnnT, paramT)
-    return foldr(rnnTrans)
+# def rnnActivationStep(t: Union[HasActivation[ENV, T], HasParameter[ENV, E]], rnnT: Callable[[X, E, T], T]) -> Callable[[X, ENV], ENV]:
+#     return stepLiteral1(t.getActivation, t.getParameter, t.putActivation, rnnT)
 
-def offlineRnnActivation(t: Union[HasActivation[ENV, T]], rnnT: Callable[[X, E, T], T]) -> Callable[[Iterator[X], ENV], ENV]:
-    # rnnTrans = onlineRnnStep(t, rnnT, lambda _, p: p)  # shows equivalence to onlineRnn. Want to get rid of parameter update capability though so not use.
-    rnnTrans = rnnActivationStep(t, rnnT)
-    return foldr(rnnTrans)
-
-def offlineRnn(t: Union[HasActivation[ENV, T], HasParameter[ENV, E]], rnnT: Callable[[X, E, T], T], paramT: Callable[[T, E], E]) -> Callable[[Iterator[X], ENV], ENV]:
-    offline = offlineRnnActivation(t, rnnT)
-    paramTrans = paramStep(t, paramT)
-    return fuseSnd(offline, t.getActivation, paramTrans)
-
-# what's a good name for doing online first with paramT1, then offline with paramT2?
-def onlineThenOffline(t: Union[HasActivation[ENV, T], HasParameter[ENV, E]], rnnT: Callable[[X, E, T], T], paramT1: Callable[[T, E], E], paramT2: Callable[[T, E], E]) -> Callable[[Iterator[X], ENV], ENV]:
-    offline = onlineRnn(t, rnnT, paramT1)
-    paramTrans = paramStep(t, paramT2)
-    return fuseSnd(offline, t.getActivation, paramTrans)
-
-def offlineRnnOho(t: Union[HasActivation[ENV, T], HasParameter[ENV, E], HasHyperParameter[ENV, A]], rnnT: Callable[[X, E, T], T], paramT: Callable[[T, E], E], ohoT: Callable[[Y, T, A], A]) -> Callable[[tuple[Iterator[X], Y], ENV], ENV]:
-    offline = offlineRnn(t, rnnT, paramT)
-    ohoTrans = metaStep(t, ohoT)
-    return fuse(offline, ohoTrans)
-
-def onlineMetaRnnStep(t: Union[HasActivation[ENV, T], HasParameter[ENV, E], HasHyperParameter[ENV, A]], rnnT: Callable[[X, E, T], T], paramT: Callable[[T, E], E], ohoT: Callable[[Y, T, A], A]) -> Callable[[tuple[X, Y], ENV], ENV]:
-    online = onlineRnnStep(t, rnnT, paramT)
-    ohoTrans = metaStep(t, ohoT)
-    return fuse(online, ohoTrans)
-
-def onlineMetaRnn(t: Union[HasActivation[ENV, T], HasParameter[ENV, E], HasHyperParameter[ENV, A]], rnnT: Callable[[X, E, T], T], paramT: Callable[[T, E], E], ohoT: Callable[[Y, T, A], A]) -> Callable[[Iterator[tuple[X, Y]], ENV], ENV]:
-    online = onlineMetaRnnStep(t, rnnT, paramT, ohoT)
-    return foldr(online)
+# # paramStep(t, ffwdParamStep) = feed forward parameter update
+# # paramStep(t, rnnParamStep) = rnn parameter update. Takes hidden state this time. 
+# def paramStep(t: Union[HasParameter[ENV, E]], paramT: Callable[[X, E], E]) -> Callable[[X, ENV], ENV]:
+#     def paramStep_(x: X, env: ENV) -> ENV:
+#         p = t.getParameter(env)
+#         p_ = paramT(x, p)
+#         return t.putParameter(p_, env)
+#     return paramStep_
 
 
-def rnnLossSeq(t: Union[HasActivation[ENV, T], HasParameter[ENV, E], HasLoss[ENV, B]], actvT: Callable[[X, E, T], T], lossT: Callable[[Y, E, T, B], B]) -> Callable[[tuple[X, Y], ENV], ENV]:
-    actv = stepLiteral1(t.getActivation, t.getParameter, t.putActivation, actvT)
-    def lossStep_(y: Y, env: ENV) -> ENV:
-        a = t.getActivation(env)
-        p = t.getParameter(env)
-        l = t.getLoss(env)
-        b_ = lossT(y, p, a, l)
-        return t.putLoss(b_, env)
-    return fuse(actv, lossStep_)
+# def metaStep(t: Union[HasParameter[ENV, T], HasHyperParameter[ENV, E]], ohoT: Callable[[X, T, E], E]) -> Callable[[X, ENV], ENV]:
+#     return stepLiteral1(t.getParameter, t.getHyperParameter, t.putHyperParameter, ohoT)
+
+
+# def onlineRnnStep(t: Union[HasActivation[ENV, T], HasParameter[ENV, E]], rnnT: Callable[[X, E, T], T], paramT: Callable[[T, E], E]) -> Callable[[X, ENV], ENV]:
+#     rnnTrans = rnnActivationStep(t, rnnT)
+#     paramTrans = paramStep(t, paramT)
+#     return fuseSnd(rnnTrans, t.getActivation, paramTrans)
+#     # def onlineRnn_(x: X, env: ENV) -> ENV:  # not using point free style means prone to errors like mixing up env, env_ but not pythonic + less type checking so whatevs
+#     #     env_ = rnnTrans(x, env)
+#     #     a = t.getActivation(env_)
+#     #     return paramTrans(a, env_)
+#     # return onlineRnn_
+
+# def onlineRnn(t: Union[HasActivation[ENV, T], HasParameter[ENV, E]], rnnT: Callable[[X, E, T], T], paramT: Callable[[T, E], E]) -> Callable[[Iterator[X], ENV], ENV]:
+#     rnnTrans = onlineRnnStep(t, rnnT, paramT)
+#     return foldr(rnnTrans)
+
+# def offlineRnnActivation(t: Union[HasActivation[ENV, T]], rnnT: Callable[[X, E, T], T]) -> Callable[[Iterator[X], ENV], ENV]:
+#     # rnnTrans = onlineRnnStep(t, rnnT, lambda _, p: p)  # shows equivalence to onlineRnn. Want to get rid of parameter update capability though so not use.
+#     rnnTrans = rnnActivationStep(t, rnnT)
+#     return foldr(rnnTrans)
+
+# def offlineRnn(t: Union[HasActivation[ENV, T], HasParameter[ENV, E]], rnnT: Callable[[X, E, T], T], paramT: Callable[[T, E], E]) -> Callable[[Iterator[X], ENV], ENV]:
+#     offline = offlineRnnActivation(t, rnnT)
+#     paramTrans = paramStep(t, paramT)
+#     return fuseSnd(offline, t.getActivation, paramTrans)
+
+# # what's a good name for doing online first with paramT1, then offline with paramT2?
+# def onlineThenOffline(t: Union[HasActivation[ENV, T], HasParameter[ENV, E]], rnnT: Callable[[X, E, T], T], paramT1: Callable[[T, E], E], paramT2: Callable[[T, E], E]) -> Callable[[Iterator[X], ENV], ENV]:
+#     offline = onlineRnn(t, rnnT, paramT1)
+#     paramTrans = paramStep(t, paramT2)
+#     return fuseSnd(offline, t.getActivation, paramTrans)
+
+# def offlineRnnOho(t: Union[HasActivation[ENV, T], HasParameter[ENV, E], HasHyperParameter[ENV, A]], rnnT: Callable[[X, E, T], T], paramT: Callable[[T, E], E], ohoT: Callable[[Y, T, A], A]) -> Callable[[tuple[Iterator[X], Y], ENV], ENV]:
+#     offline = offlineRnn(t, rnnT, paramT)
+#     ohoTrans = metaStep(t, ohoT)
+#     return fuse(offline, ohoTrans)
+
+# def onlineMetaRnnStep(t: Union[HasActivation[ENV, T], HasParameter[ENV, E], HasHyperParameter[ENV, A]], rnnT: Callable[[X, E, T], T], paramT: Callable[[T, E], E], ohoT: Callable[[Y, T, A], A]) -> Callable[[tuple[X, Y], ENV], ENV]:
+#     online = onlineRnnStep(t, rnnT, paramT)
+#     ohoTrans = metaStep(t, ohoT)
+#     return fuse(online, ohoTrans)
+
+# def onlineMetaRnn(t: Union[HasActivation[ENV, T], HasParameter[ENV, E], HasHyperParameter[ENV, A]], rnnT: Callable[[X, E, T], T], paramT: Callable[[T, E], E], ohoT: Callable[[Y, T, A], A]) -> Callable[[Iterator[tuple[X, Y]], ENV], ENV]:
+#     online = onlineMetaRnnStep(t, rnnT, paramT, ohoT)
+#     return foldr(online)
+
+
+# def rnnLossSeq(t: Union[HasActivation[ENV, T], HasParameter[ENV, E], HasLoss[ENV, B]], actvT: Callable[[X, E, T], T], lossT: Callable[[Y, E, T, B], B]) -> Callable[[tuple[X, Y], ENV], ENV]:
+#     actv = stepLiteral1(t.getActivation, t.getParameter, t.putActivation, actvT)
+#     def lossStep_(y: Y, env: ENV) -> ENV:
+#         a = t.getActivation(env)
+#         p = t.getParameter(env)
+#         l = t.getLoss(env)
+#         b_ = lossT(y, p, a, l)
+#         return t.putLoss(b_, env)
+#     return fuse(actv, lossStep_)
 
 # I should make these combinations in line, since there's a combinatorial explosion of all posible combinations. I have the pattern, just need to assemble on demand. 
 
@@ -475,6 +524,12 @@ def parameterTrans(optimizer):
     return parameterTrans_
 
 
+def trainProgram(t: VanillaRnnStateInterpreter, optimizer) -> Callable[[Iterator[tuple[Iterator[torch.Tensor], torch.Tensor]], MODEL], MODEL]:
+    rnn = offlineRnnPredict(t, activationTrans, predictTrans)
+    learn = learnStep(t, rnn, lossTrans, parameterTrans(optimizer))
+    return repeatWithReset(t, learn)
+
+
 
 W_rec_, W_in_, b_rec_, W_out_, b_out_ = initializeParametersIO(input_size, hidden_size, num_classes)
 alpha_ = 1
@@ -483,47 +538,6 @@ state0 = VanillaRnnState(torch.zeros(batch_size, hidden_size, dtype=torch.float3
                         , 0
                         , (W_rec_, W_in_, b_rec_, W_out_, b_out_, alpha_))
 
-
-def classifyImage(
-        t: Union[HasActivation[ENV, T], HasParameter[ENV, E]]
-        , actvT: Callable[[Union[HasActivation[ENV, T], HasParameter[ENV, E]]], Callable[[X, ENV], ENV]]
-        , predictT: Callable[[Union[HasParameter[ENV, E], HasActivation[ENV, T]]], Callable[[ENV,  tuple[ENV, A]]]]) -> Callable[[Iterator[X], ENV], tuple[ENV, A]]:
-    actvStep = actvT(t)
-    predictStep = predictT(t)
-    offline = foldr(actvStep)
-    def predict_(xs: Iterator[X], env: ENV) -> tuple[ENV, A]: # fmap (predictStep .) offline
-        env_ = offline(xs, env)
-        return predictStep(env_)
-    return predict_
-
-
-
-# def classifyImage(t: Union[HasActivation[ENV, T], HasParameter[ENV, E]], actvT: Callable[[X, E, T], T], predictT: Callable[[E, T], B]) -> Callable[[Iterator[X], ENV], B]:
-#     predictedImage = offlineRnnActivation(t, actvT)
-#     def predictFn(xs: Iterator[X], env: ENV) -> B:
-#         env_ = predictedImage(xs, env)
-#         return predictT(t.getParameter(env_), t.getActivation(env_))
-#     return predictFn
-
-def learnImage(t: Union[HasActivation[ENV, T], HasParameter[ENV, E], HasLoss[ENV, B]], actvT: Callable[[X, E, T], T], predictT: Callable[[E, T], C], lossT: Callable[[Y, C, B], B], paramT: Callable[[B, E], E]) -> Callable[[tuple[Iterator[X], Y], ENV], ENV]:
-    predictedImage = offlineRnnActivation(t, actvT)
-    lossFn = stepLiteral2(t.getActivation, t.getParameter, t.getLoss, t.putLoss, lossT)
-    predictedLoss = fuse(predictedImage, lossFn)
-    paramTrans = stepLiteral0(t.getParameter, t.putParameter, paramT)
-    learnStep = fuseSnd(predictedLoss, t.getLoss, paramTrans)
-    return learnStep
-
-
-def learnImage(t: Union[HasActivation[ENV, T], HasParameter[ENV, E], HasLoss[ENV, B]], actvT: Callable[[X, E, T], T], lossT: Callable[[Y, E, T, B], B], paramT: Callable[[B, E], E]) -> Callable[[Iterator[tuple[Iterator[X], Y]], ENV], ENV]:
-    learnStep = learnImage(t, actvT, lossT, paramT)
-    def learn(xs: Iterator[tuple[Iterator[X], Y]], _env: ENV) -> ENV:
-        a0 = t.getActivation(_env)
-        resetter: Callable[[ENV], ENV] = lambda env: t.putActivation(a0, env)      
-        resetActivation = fmap(lambda g: compose2(resetter, g), lambda x: lambda env: learnStep(x, env))  # fmap (reset .) learnStep
-        return foldr(lambda pair, env: resetActivation(pair)(env))(xs, _env)
-    return learn
-
-# also need to have a prediction only model
 
 
 
@@ -549,15 +563,4 @@ with torch.no_grad():
                         , getOutputs((-1, h0, (pN, readoutN))))
     print(accuracy(testOuputs, xtream_test, targets_test))
 
-
-
-t1: float = 6
-t2: float = 4
-a: float = 2
-b: float = -1
-t1_dur: float = 0.99
-t2_dur: float = 0.99
-outT: float = 10
-st, et = 0., 11.
-addMemoryTask: Callable[[float], tuple[float, float, float]] = createAddMemoryTask(t1, t2, a, b, t1_dur, t2_dur, outT)
 
