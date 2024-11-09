@@ -4,8 +4,15 @@ from toolz.curried import curry, map, concat, compose
 import itertools
 import numpy as np
 import torch 
+from torch.nn import functional as f
 
-T = TypeVar('T') 
+
+T = TypeVar('T')
+E = TypeVar('E')
+A = TypeVar('A')
+B = TypeVar('B')
+C = TypeVar('C')
+D = TypeVar('D')
 X = TypeVar('X')
 Y = TypeVar('Y')
 
@@ -65,6 +72,39 @@ def mapTuple1(f, pair):
 
 
 cycle_efficient = compose(itertools.chain.from_iterable, itertools.repeat)
+
+
+def composeSnd(f: Callable[[A, B], C], g: Callable[[C], D]) -> Callable[[A, B], D]:
+    def composeSnd_(a: A, b: B) -> D:
+        return g(f(a, b))
+    return composeSnd_
+
+
+def liftA2(f: Callable[[A, B], C], g: Callable[[D], A], h: Callable[[D], B]) -> Callable[[D], C]:
+    def liftA2_(d: D) -> C:
+        return f(g(d), h(d))
+    return liftA2_
+
+# def liftA1(f: Callable[[B], C], g: Callable[[A], B]) -> Callable[[A], C]:
+#     return flip(compose2)
+
+def flip(f: Callable[[A, B], C]) -> Callable[[B, A], C]:
+    def flip_(b: B, a: A) -> C:
+        return f(a, b)
+    return flip_
+
+def apply(f: Callable[[A], B], x: A) -> B:
+    return f(x)
+
+def const(x: A) -> Callable[[B], A]:
+    return lambda _: x
+
+def compose2(f: Callable[[A], B], g: Callable[[B], C]) -> Callable[[A], C]:
+    def compose2_(a: A) -> C:
+        return g(f(a))
+    return compose2_
+
+fmap = flip(compose2)
 
 
 

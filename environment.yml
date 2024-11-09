@@ -18,5 +18,7 @@ dependencies:
   - torchvision
   - toolz
   - memory_profiler
+  - typing-extensions
+  - mypy
   - pip:
     - -e ./src/code
