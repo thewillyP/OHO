@@ -239,8 +239,8 @@ def resetRnnActivation(t: Union[HasActivation[ENV, A]]
     return fmapPrefix(reset_, resetee)
 
 def resetLoss(t: Union[HasLoss[ENV, L]]  # TODO: generalize this
-                , resetee:  Callable[[X, ENV], ENV]
-                , loss0: A) -> Callable[[X, ENV], ENV]:
+                , resetee:  Callable[[X, ENV], T]
+                , loss0: A) -> Callable[[X, ENV], T]:
     def reset_(env: ENV) -> ENV:
         return t.putLoss(loss0, env)
     return fmapPrefix(reset_, resetee)
@@ -259,7 +259,7 @@ def repeatRnnWithReset(t: Union[HasActivation[ENV, A], HasParameter[ENV, P], Has
 
 
 
-from memory_profiler import profile
+# from memory_profiler import profile
 import torch 
 from torch.nn import functional as f
 from torch import nn
@@ -285,16 +285,23 @@ MODEL = VanillaRnnState[torch.Tensor, torch.Tensor, PARAM]
 
 def rnnTrans(activation: Callable) -> Callable[[torch.Tensor, tuple[torch.Tensor, torch.Tensor, torch.Tensor, float], torch.Tensor], torch.Tensor]:
     def rnnTrans_(x: torch.Tensor, param: tuple[torch.Tensor, torch.Tensor, torch.Tensor, float], h: torch.Tensor) -> torch.Tensor:
-        W_in, W_rec, b_rec, alpha = param
-        return (1 - alpha) * h + alpha * activation(f.linear(x, W_in, None) + f.linear(h, W_rec, b_rec))
+        W_rec, W_in, b_rec, alpha = param
+        return (1-alpha ) * h + alpha * activation(f.linear(x, W_in, None) + f.linear(h, W_rec, b_rec))
     return rnnTrans_
-
+# (W_rec_, W_in_, b_rec_, W_out_, b_out_, alpha_))
 def activationTrans(activationFn: Callable[[torch.Tensor], torch.Tensor]):
     def activationTrans_(t: Union[HasActivation[MODEL, torch.Tensor], HasParameter[MODEL, PARAM]]) -> Callable[[torch.Tensor, MODEL], MODEL]:
         def activationTrans__(x: torch.Tensor, env: MODEL) -> MODEL:
             a = t.getActivation(env)
             W_rec, W_in, b_rec, _, _, alpha = t.getParameter(env)
-            a_ = rnnTrans(activationFn)(x, (W_in, W_rec, b_rec, alpha), a)
+
+            # norms = []
+            # for param in t.getParameter(env)[:-1]:
+            #     norms.append(param.norm().item())  # Get the norm as a scalar
+            # avg_param_norm = sum(norms) / len(norms)
+            # print(avg_param_norm)
+
+            a_ = rnnTrans(activationFn)(x, (W_rec, W_in, b_rec, alpha), a)
             return t.putActivation(a_, env)
         return activationTrans__
     return activationTrans_
@@ -333,27 +340,28 @@ def lossTrans(t: Union[HasLoss[MODEL, torch.Tensor]]) -> Callable[[torch.Tensor,
 step = 0
 losses = []
 param_norms = []
-def parameterTrans(optimizer):
+def parameterTrans(opt):
     def parameterTrans_(t: Union[HasParameter[MODEL, PARAM], HasLoss[MODEL, torch.Tensor]]) -> Callable[[MODEL], MODEL]:
         def parameterTrans__(env: MODEL) -> MODEL:
-            global step, losses
-            optimizer.zero_grad() 
+            global step, losses, param_norms
+            opt.zero_grad() 
             loss = t.getLoss(env)
 
-            # make_dot(loss, params=dict(model.named_parameters())).render("graph", format="png")
-            # quit()
+            # make_dot(loss, params=dict(t.getParameter(env).named_parameters())).render("working", format="png")
             loss.backward()
-            optimizer.step()  # will actuall physically spooky mutate the param so no update needed. 
+            opt.step()  # will actuall physically spooky mutate the param so no update needed. 
             if (step+1) % 100 == 0:
+                # make_dot(loss, params=dict({i: a for i, a in enumerate(t.getParameter(env)[:-1])})).render("graph1", format="png")
+                # quit()
                 print (f'Step [{step+1}], Loss: {loss.item():.4f}')
             losses.append(loss.item())
             step += 1
 
-            norms = []
-            for param in t.getParameter(env)[:-1]:
-                norms.append(param.norm().item())  # Get the norm as a scalar
-            avg_param_norm = sum(norms) / len(norms)
-            param_norms.append(avg_param_norm)
+            # norms = []
+            # for param in t.getParameter(env)[:-1]:
+            #     norms.append(param.norm().item())  # Get the norm as a scalar
+            # avg_param_norm = sum(norms) / len(norms)
+            # param_norms.append(avg_param_norm)
             return env
         return parameterTrans__
     return parameterTrans_
@@ -376,42 +384,42 @@ def pyTorchRnn(t: Union[HasParameter[MODEL, PARAM]]) -> Callable[[torch.Tensor, 
 
 
 # Fully connected neural network with one hidden layer
-# class RNN(nn.Module):
-#     def __init__(self, input_size, hidden_size, num_layers, num_classes):
-#         super(RNN, self).__init__()
-#         self.num_layers = num_layers
-#         self.hidden_size = hidden_size
-#         self.rnn = nn.RNN(input_size, hidden_size, num_layers, batch_first=True)
-#         # -> x needs to be: (batch_size, seq, input_size)
+class RNN(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers, num_classes):
+        super(RNN, self).__init__()
+        self.num_layers = num_layers
+        self.hidden_size = hidden_size
+        self.rnn = nn.RNN(input_size, hidden_size, num_layers, batch_first=True, nonlinearity='relu')
+        # -> x needs to be: (batch_size, seq, input_size)
         
-#         # or:
-#         #self.gru = nn.GRU(input_size, hidden_size, num_layers, batch_first=True)
-#         #self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
-#         self.fc = nn.Linear(hidden_size, num_classes)
+        # or:
+        #self.gru = nn.GRU(input_size, hidden_size, num_layers, batch_first=True)
+        #self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+        self.fc = nn.Linear(hidden_size, num_classes)
         
-#     def forward(self, x):
-#         # Set initial hidden states (and cell states for LSTM)
-#         h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size)
-#         #c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device) 
+    def forward(self, x):
+        # Set initial hidden states (and cell states for LSTM)
+        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size)
+        #c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device) 
         
-#         # x: (n, 28, 28), h0: (2, n, 128)
+        # x: (n, 28, 28), h0: (2, n, 128)
 
         
-#         # Forward propagate RNN
-#         out, _ = self.rnn(x, h0)  
-#         # or:
-#         #out, _ = self.lstm(x, (h0,c0))  
+        # Forward propagate RNN
+        out, _ = self.rnn(x, h0)  
+        # or:
+        #out, _ = self.lstm(x, (h0,c0))  
         
-#         # out: tensor of shape (batch_size, seq_length, hidden_size)
-#         # out: (n, 28, 128)
+        # out: tensor of shape (batch_size, seq_length, hidden_size)
+        # out: (n, 28, 128)
         
-#         # Decode the hidden state of the last time step
-#         out = out[:, -1, :]
-#         # out: (n, 128)
+        # Decode the hidden state of the last time step
+        out = out[:, -1, :]
+        # out: (n, 128)
          
-#         out = self.fc(out)
-#         # out: (n, 10)
-#         return out
+        out = self.fc(out)
+        # out: (n, 10)
+        return out
 
 
 
@@ -420,8 +428,8 @@ def pyTorchRnn(t: Union[HasParameter[MODEL, PARAM]]) -> Callable[[torch.Tensor, 
 # Hyper-parameters 
 # input_size = 784 # 28x28
 num_classes = 10
-num_epochs = 2
-batch_size = 100
+num_epochs = 4
+batch_size = 300
 
 input_size = 28
 sequence_length = 28
@@ -429,10 +437,9 @@ hidden_size = 128
 num_layers = 1
 
 alpha_ = 1
-activation_ = f.tanh
+activation_ = f.relu
 learning_rate = 0.001
 
-# model = RNN(input_size, hidden_size, num_layers, num_classes)
 
 
 
@@ -454,29 +461,29 @@ test_loader = torch.utils.data.DataLoader(dataset=test_dataset,
                                         batch_size=batch_size, 
                                         shuffle=False)
 cleanData = map(lambda pair: (pair[0].squeeze(1).permute(1, 0, 2), pair[1])) # origin shape: [N, 1, 28, 28] -> resized: [28, N, 28]
-# cleanData2 = map(lambda pair: (pair[0].reshape(-1, sequence_length, input_size), pair[1])) # origin shape: [N, 1, 28, 28] -> resized: [N, 28, 28]
-# train_loader = cleanData(train_loader)
-# test_loader = cleanData(test_loader)
+
 
 
 
 W_rec_, W_in_, b_rec_, W_out_, b_out_ = initializeParametersIO(input_size, hidden_size, num_classes)
 alpha_ = 1
 optimizer = torch.optim.Adam((W_rec_, W_in_, b_rec_, W_out_, b_out_), lr=learning_rate) 
+a0 = torch.zeros(1, hidden_size, dtype=torch.float32)
 
-
-state0 = VanillaRnnState(torch.zeros(batch_size, hidden_size, dtype=torch.float32)
+state0 = VanillaRnnState( a0
                         , 0
                         , (W_rec_, W_in_, b_rec_, W_out_, b_out_, alpha_))
 
 rnn = getRnn(VanillaRnnStateInterpreter(), activation_)
 trainFn = trainRnn(VanillaRnnStateInterpreter(), optimizer, rnn)
 trainEpochsFn = repeatRnnWithReset(VanillaRnnStateInterpreter(), trainFn)
-_ = trainFn(cleanData(train_loader), state0)
-# epochs = [cleanData(train_loader) for _ in range(num_epochs)]
-# stateTrained = trainEpochsFn(epochs, state0)
+# _ = trainFn(cleanData(train_loader), state0)
+epochs = [cleanData(train_loader) for _ in range(num_epochs)]
+stateTrained = trainEpochsFn(epochs, state0)
 
 
+# cleanData2 = map(lambda pair: (pair[0].reshape(-1, sequence_length, input_size), pair[1])) # origin shape: [N, 1, 28, 28] -> resized: [N, 28, 28]
+# model = RNN(input_size, hidden_size, num_layers, num_classes)
 # optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)  
 # state0 = VanillaRnnState(torch.zeros(batch_size, hidden_size, dtype=torch.float32)
 #                         , 0
@@ -485,6 +492,7 @@ _ = trainFn(cleanData(train_loader), state0)
 # rnn = pyTorchRnn(VanillaRnnStateInterpreter())
 # trainFn = trainRnn(VanillaRnnStateInterpreter(), optimizer, rnn)
 # trainEpochsFn = repeatRnnWithReset(VanillaRnnStateInterpreter(), trainFn)
+# _ = trainFn(cleanData2(train_loader), state0)
 
 # epochs = [cleanData2(train_loader) for _ in range(num_epochs)]
 # stateTrained = trainEpochsFn(epochs, state0)
@@ -494,7 +502,7 @@ _ = trainFn(cleanData(train_loader), state0)
 
 #%%
 
-# rnnPredictor_ = fmapSuffix(snd, rnn)
+rnnPredictor_ = resetRnnActivation(VanillaRnnStateInterpreter(), fmapSuffix(snd, rnn), a0)
 # def checkPrediction(label: torch.Tensor, prediction: torch.Tensor):
 #     _, predicted = torch.max(prediction.data, 1)
 #     n_samples = label.size(0)
@@ -506,13 +514,26 @@ _ = trainFn(cleanData(train_loader), state0)
 # # rnnPredictor = lambda data: rnnPredictor(data, stateTrained)
 # combiner = lambda res, pair: (res[0] + pair[0], res[1] + pair[1])
 # aggr = fmapPrefix(rnnPredictor, combiner)
-# test = foldr(flip(aggr))(cleanData2(test_loader), (0, 0))  # because data gets holed into snd arg we have to flip. This not problem is auto curry with g . f
+# test = foldr(flip(aggr))(cleanData(test_loader), (0, 0))  # because data gets holed into snd arg we have to flip. This not problem is auto curry with g . f
 # print(f'Accuracy: {100.0 * test[1] / test[0]}')
 
+with torch.no_grad():
+    n_correct = 0
+    n_samples = 0
+    for images, labels in cleanData(test_loader):
+        outputs = rnnPredictor_(images, stateTrained)
+        _, predicted = torch.max(outputs.data, 1)
+        n_samples += labels.size(0)
+        n_correct += (predicted == labels).sum().item()
+
+    acc = 100.0 * n_correct / n_samples
+    print(f'Accuracy of the network on the 10000 test images: {acc} %')
+
+
 # plot losses
-# plt.plot(losses)
-plt.plot(param_norms)
-plt.show()
+plt.plot(losses)
+# plt.plot(param_norms)
+# plt.show()
 
 
 
