@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+FROM mambaorg/micromamba:cuda12.4.1-ubuntu22.04
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
@@ -19,6 +19,7 @@ RUN apt update \
     wget \
     git \
     nano \
+    graphviz \
     && apt clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -28,24 +29,10 @@ SHELL ["/bin/bash", "-c"]
 RUN echo "exec /bin/bash" >> /etc/profile
 
 
-ENV PATH=/opt/conda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-
-# Install miniconda
-RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda.sh \
-    && bash ~/miniconda.sh -b -u -p /opt/conda \
-    && rm ~/miniconda.sh \
-    && ln -s /opt/conda/etc/profile.d/conda.sh /etc/profile.d/conda.sh \
-    && echo ". /opt/conda/etc/profile.d/conda.sh" >> ~/.bashrc \
-    && echo "conda activate base" >> ~/.bashrc \
-    && find /opt/conda/ -follow -type f -name '*.a' -delete \
-    && find /opt/conda/ -follow -type f -name '*.js.map' -delete \
-    && /opt/conda/bin/conda clean -afy
-
-
 WORKDIR /workspace
 
 COPY ./environment.yml .
 
 COPY ./src ./src
 
-RUN conda env create -f environment.yml && conda clean -afy
+RUN micromamba create -f environment.yml && micromamba clean --all --yes
