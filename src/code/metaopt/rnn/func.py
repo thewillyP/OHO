@@ -23,6 +23,11 @@ def scan(f: Callable[[T, X], T], state: T, it: Iterator[X]) -> Generator[T, None
         state = f(state, x)
         yield state
 
+def scan0(f: Callable[[T, X], T], state: T, it: Iterator[X]) -> Generator[T, None, None]:
+    for x in it:
+        state = f(state, x)
+        yield state
+
 
 @curry
 def uncurry(f: Callable[[T, X], Y]) -> Callable[[tuple[T, X]], Y]:
@@ -111,11 +116,11 @@ def compose2(f: Callable[[A], B], g: Callable[[B], C]) -> Callable[[A], C]:
 @curry
 def initializeParametersIO(n_in: int, n_h: int, n_out: int
                         ) -> tuple[torch.nn.Parameter, torch.nn.Parameter, torch.nn.Parameter, torch.nn.Parameter, torch.nn.Parameter]:
-    W_in = np.random.normal(0, np.sqrt(1/(n_in)), (n_h, n_in))
-    W_rec = np.linalg.qr(np.random.normal(0, 1, (n_h, n_h)))[0]
-    W_out = np.random.normal(0, np.sqrt(1/(n_h)), (n_out, n_h))
-    b_rec = np.random.normal(0, np.sqrt(1/(n_h)), (n_h,))
-    b_out = np.random.normal(0, np.sqrt(1/(n_out)), (n_out,))
+    W_in = np.random.uniform(0, np.sqrt(1/(n_in)), (n_h, n_in))
+    W_rec = np.random.uniform(0, 1, (n_h, n_h))  # np.linalg.qr(np.random.uniform(0, 1, (n_h, n_h)))[0]
+    W_out = np.random.uniform(0, np.sqrt(1/(n_h)), (n_out, n_h))
+    b_rec = np.random.uniform(0, np.sqrt(1/(n_h)), (n_h,))
+    b_out = np.random.uniform(0, np.sqrt(1/(n_out)), (n_out,))
 
     # _W_rec = torch.nn.Parameter(torch.tensor(W_rec, requires_grad=True, dtype=torch.float32))
     # _W_in = torch.nn.Parameter(torch.tensor(W_in, requires_grad=True, dtype=torch.float32))

@@ -1,3 +1,4 @@
+# %%
 from abc import ABCMeta, abstractmethod
 from functools import reduce
 from typing import Callable, List, TypeVar, Generic, Iterator, Union
@@ -6,7 +7,9 @@ from torch.nn import functional as f
 import torch
 from dataclasses import dataclass
 from func import *
-
+from matplotlib import pyplot as plt
+from torchviz import make_dot
+from operator import add
 
 T = TypeVar('T')
 E = TypeVar('E')
@@ -296,6 +299,23 @@ def activationTrans(activationFn: Callable[[torch.Tensor], torch.Tensor]):
         return activationTrans__
     return activationTrans_
 
+
+# def activationLayersTrans(activationFn: Callable[[torch.Tensor], torch.Tensor]):
+#     def activationTrans_(t: Union[HasActivation[MODEL, List[torch.Tensor]], HasParameter[MODEL, PARAM]]) -> Callable[[torch.Tensor, MODEL], MODEL]:
+#         def activationTrans__(x: torch.Tensor, env: MODEL) -> MODEL:
+#             as_ = t.getActivation(env)
+#             W_rec, W_in, b_rec, _, _, alpha = t.getParameter(env)
+#             def scanner(prevActv: torch.Tensor, nextActv: torch.Tensor) -> torch.Tensor:  # i'm folding over nextActv
+#                 return rnnTrans(activationFn)(prevActv, (W_in, W_rec, b_rec, alpha), nextActv)
+#             as__ = list(scan0(scanner, x, as_))
+#             return t.putActivation(as__, env)
+#         return activationTrans__
+#     return activationTrans_
+
+
+
+# doing multiple layers is just a fold over it
+
 def predictTrans(t: Union[HasActivation[MODEL, torch.Tensor], HasParameter[MODEL, PARAM]]) -> Callable[[MODEL], tuple[MODEL, torch.Tensor]]:
     def predictTrans_(env: MODEL) -> tuple[MODEL, torch.Tensor]:
         a = t.getActivation(env)
@@ -310,14 +330,30 @@ def lossTrans(t: Union[HasLoss[MODEL, torch.Tensor]]) -> Callable[[torch.Tensor,
         return t.putLoss(loss, env)
     return lossTrans_
 
+step = 0
+losses = []
+param_norms = []
 def parameterTrans(optimizer):
     def parameterTrans_(t: Union[HasParameter[MODEL, PARAM], HasLoss[MODEL, torch.Tensor]]) -> Callable[[MODEL], MODEL]:
         def parameterTrans__(env: MODEL) -> MODEL:
+            global step, losses
             optimizer.zero_grad() 
             loss = t.getLoss(env)
+
+            # make_dot(loss, params=dict(model.named_parameters())).render("graph", format="png")
+            # quit()
             loss.backward()
             optimizer.step()  # will actuall physically spooky mutate the param so no update needed. 
-            print (f'Loss: {loss.item():.10f}')
+            if (step+1) % 100 == 0:
+                print (f'Step [{step+1}], Loss: {loss.item():.4f}')
+            losses.append(loss.item())
+            step += 1
+
+            norms = []
+            for param in t.getParameter(env)[:-1]:
+                norms.append(param.norm().item())  # Get the norm as a scalar
+            avg_param_norm = sum(norms) / len(norms)
+            param_norms.append(avg_param_norm)
             return env
         return parameterTrans__
     return parameterTrans_
@@ -327,9 +363,55 @@ def getRnn(t: VanillaRnnStateInterpreter, activationFn) -> Callable[[Iterator[to
 
 def trainRnn(t: VanillaRnnStateInterpreter
                 , optimizer
-                , rnn: Callable[[Iterator[torch.Tensor], MODEL], tuple[MODEL, torch.Tensor]]) -> Callable[[Iterator[tuple[Iterator[torch.Tensor], torch.Tensor]], MODEL], MODEL]:
+                , rnn: Callable[[X, MODEL], tuple[MODEL, torch.Tensor]]) -> Callable[[Iterator[tuple[X, torch.Tensor]], MODEL], MODEL]:
     learn = learnStep(t, rnn, lossTrans, parameterTrans(optimizer))
     return repeatRnnWithReset(t, learn)
+
+
+def pyTorchRnn(t: Union[HasParameter[MODEL, PARAM]]) -> Callable[[torch.Tensor, MODEL], tuple[MODEL, torch.Tensor]]:
+    def predictTrans_(x: torch.Tensor, env: MODEL) -> tuple[MODEL, torch.Tensor]:
+        model = t.getParameter(env)
+        return env, model(x)
+    return predictTrans_
+
+
+# Fully connected neural network with one hidden layer
+# class RNN(nn.Module):
+#     def __init__(self, input_size, hidden_size, num_layers, num_classes):
+#         super(RNN, self).__init__()
+#         self.num_layers = num_layers
+#         self.hidden_size = hidden_size
+#         self.rnn = nn.RNN(input_size, hidden_size, num_layers, batch_first=True)
+#         # -> x needs to be: (batch_size, seq, input_size)
+        
+#         # or:
+#         #self.gru = nn.GRU(input_size, hidden_size, num_layers, batch_first=True)
+#         #self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+#         self.fc = nn.Linear(hidden_size, num_classes)
+        
+#     def forward(self, x):
+#         # Set initial hidden states (and cell states for LSTM)
+#         h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size)
+#         #c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device) 
+        
+#         # x: (n, 28, 28), h0: (2, n, 128)
+
+        
+#         # Forward propagate RNN
+#         out, _ = self.rnn(x, h0)  
+#         # or:
+#         #out, _ = self.lstm(x, (h0,c0))  
+        
+#         # out: tensor of shape (batch_size, seq_length, hidden_size)
+#         # out: (n, 28, 128)
+        
+#         # Decode the hidden state of the last time step
+#         out = out[:, -1, :]
+#         # out: (n, 128)
+         
+#         out = self.fc(out)
+#         # out: (n, 10)
+#         return out
 
 
 
@@ -338,17 +420,20 @@ def trainRnn(t: VanillaRnnStateInterpreter
 # Hyper-parameters 
 # input_size = 784 # 28x28
 num_classes = 10
-num_epochs = 10
+num_epochs = 2
 batch_size = 100
 
 input_size = 28
 sequence_length = 28
 hidden_size = 128
-num_layers = 2
+num_layers = 1
 
 alpha_ = 1
-activation_ = f.relu
+activation_ = f.tanh
 learning_rate = 0.001
+
+# model = RNN(input_size, hidden_size, num_layers, num_classes)
+
 
 
 # MNIST dataset 
@@ -369,6 +454,7 @@ test_loader = torch.utils.data.DataLoader(dataset=test_dataset,
                                         batch_size=batch_size, 
                                         shuffle=False)
 cleanData = map(lambda pair: (pair[0].squeeze(1).permute(1, 0, 2), pair[1])) # origin shape: [N, 1, 28, 28] -> resized: [28, N, 28]
+# cleanData2 = map(lambda pair: (pair[0].reshape(-1, sequence_length, input_size), pair[1])) # origin shape: [N, 1, 28, 28] -> resized: [N, 28, 28]
 # train_loader = cleanData(train_loader)
 # test_loader = cleanData(test_loader)
 
@@ -376,7 +462,9 @@ cleanData = map(lambda pair: (pair[0].squeeze(1).permute(1, 0, 2), pair[1])) # o
 
 W_rec_, W_in_, b_rec_, W_out_, b_out_ = initializeParametersIO(input_size, hidden_size, num_classes)
 alpha_ = 1
-optimizer = torch.optim.Adam([W_rec_, W_in_, b_rec_, W_out_, b_out_], lr=learning_rate)  
+optimizer = torch.optim.Adam((W_rec_, W_in_, b_rec_, W_out_, b_out_), lr=learning_rate) 
+
+
 state0 = VanillaRnnState(torch.zeros(batch_size, hidden_size, dtype=torch.float32)
                         , 0
                         , (W_rec_, W_in_, b_rec_, W_out_, b_out_, alpha_))
@@ -384,32 +472,48 @@ state0 = VanillaRnnState(torch.zeros(batch_size, hidden_size, dtype=torch.float3
 rnn = getRnn(VanillaRnnStateInterpreter(), activation_)
 trainFn = trainRnn(VanillaRnnStateInterpreter(), optimizer, rnn)
 trainEpochsFn = repeatRnnWithReset(VanillaRnnStateInterpreter(), trainFn)
-
-epochs = [cleanData(train_loader) for _ in range(num_epochs)]
-stateTrained = trainEpochsFn(epochs, state0)
-
-
+_ = trainFn(cleanData(train_loader), state0)
+# epochs = [cleanData(train_loader) for _ in range(num_epochs)]
+# stateTrained = trainEpochsFn(epochs, state0)
 
 
-# def predict(output, target):
-#     _, predicted = torch.max(output.data, 1)
-#     n_samples = target.size(0)
-#     n_correct = (predicted == target).sum().item()
+# optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)  
+# state0 = VanillaRnnState(torch.zeros(batch_size, hidden_size, dtype=torch.float32)
+#                         , 0
+#                         , model)
+
+# rnn = pyTorchRnn(VanillaRnnStateInterpreter())
+# trainFn = trainRnn(VanillaRnnStateInterpreter(), optimizer, rnn)
+# trainEpochsFn = repeatRnnWithReset(VanillaRnnStateInterpreter(), trainFn)
+
+# epochs = [cleanData2(train_loader) for _ in range(num_epochs)]
+# stateTrained = trainEpochsFn(epochs, state0)
+
+
+
+
+#%%
+
+# rnnPredictor_ = fmapSuffix(snd, rnn)
+# def checkPrediction(label: torch.Tensor, prediction: torch.Tensor):
+#     _, predicted = torch.max(prediction.data, 1)
+#     n_samples = label.size(0)
+#     n_correct = (predicted == label).sum().item()
 #     return (n_samples, n_correct)
+# rnnPredictor__ = fuse(rnnPredictor_, checkPrediction)
+# def rnnPredictor(data: tuple[torch.Tensor, torch.Tensor]) -> tuple[int, int]:
+#     return rnnPredictor__(data, stateTrained)
+# # rnnPredictor = lambda data: rnnPredictor(data, stateTrained)
+# combiner = lambda res, pair: (res[0] + pair[0], res[1] + pair[1])
+# aggr = fmapPrefix(rnnPredictor, combiner)
+# test = foldr(flip(aggr))(cleanData2(test_loader), (0, 0))  # because data gets holed into snd arg we have to flip. This not problem is auto curry with g . f
+# print(f'Accuracy: {100.0 * test[1] / test[0]}')
+
+# plot losses
+# plt.plot(losses)
+plt.plot(param_norms)
+plt.show()
 
 
-# accuracy = compose(   lambda pair: 100.0 * pair[1] / pair[0]
-#                     , totalStatistic(predict, lambda res, pair: (res[0] + pair[0], res[1] + pair[1])))
 
-# with torch.no_grad():
-#     xs_test, ys_test = tee(test_loader, 2)
-#     xtream_test, targets_test = map(compose(lambda x: (x, None), fst), xs_test), map(snd, ys_test)
-
-#     def getReadout(pair):
-#         h, (_, rd) = pair 
-#         return rd(h)
-#     testOuputs = compose( map(getReadout)
-#                         , getOutputs((-1, h0, (pN, readoutN))))
-#     print(accuracy(testOuputs, xtream_test, targets_test))
-
-
+# %%
