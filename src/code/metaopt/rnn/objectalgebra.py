@@ -428,8 +428,8 @@ class RNN(nn.Module):
 # Hyper-parameters 
 # input_size = 784 # 28x28
 num_classes = 10
-num_epochs = 4
-batch_size = 300
+num_epochs = 2
+batch_size = 100
 
 input_size = 28
 sequence_length = 28
@@ -437,7 +437,7 @@ hidden_size = 128
 num_layers = 1
 
 alpha_ = 1
-activation_ = f.relu
+activation_ = f.tanh
 learning_rate = 0.001
 
 
