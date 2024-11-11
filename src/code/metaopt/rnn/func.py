@@ -143,9 +143,34 @@ def initializeParametersIO(n_in: int, n_h: int, n_out: int
     return _W_rec, _W_in, _b_rec, _W_out, _b_out
 
 
-linear_ = curry(lambda w, b, h: f.linear(h, w, b))
+# linear_ = curry(lambda w, b, h: f.linear(h, w, b))
 
 
-@curry
-def rnnTransition(W_in, W_rec, b_rec, activation, alpha, h, x):
-    return (1 - alpha) * h + alpha * activation(f.linear(x, W_in, None) + f.linear(h, W_rec, b_rec))
+# @curry
+# def rnnTransition(W_in, W_rec, b_rec, activation, alpha, h, x):
+#     return (1 - alpha) * h + alpha * activation(f.linear(x, W_in, None) + f.linear(h, W_rec, b_rec))
+
+
+
+def foldr(f: Callable[[A, B], B]) -> Callable[[Iterator[A], B], B]:
+    def foldr_(xs: Iterator[A], x: B) -> B:
+        return reduce(flip(f), xs, x)
+    return foldr_
+
+
+def fuse(f: Callable[[X, A], B], g: Callable[[Y, B], C]) -> Callable[[tuple[X, Y], A], C]: 
+    """ g . f """
+    def fuse_(pair: tuple[X, Y], a: A) -> C:
+        x, y = pair
+        return g(y, f(x, a))
+    return fuse_
+
+def fmapSuffix(g: Callable[[B], C], f: Callable[[X, A], B]) -> Callable[[X, A], C]:
+    def fmapSuffix_(x: X, a: A) -> C:
+        return g(f(x, a))
+    return fmapSuffix_
+
+def fmapPrefix(g: Callable[[A], B], f: Callable[[X, B], C]) -> Callable[[X, A], C]:
+    def fmapPrefix_(x: X, a: A) -> C:
+        return f(x, g(a))
+    return fmapPrefix_
