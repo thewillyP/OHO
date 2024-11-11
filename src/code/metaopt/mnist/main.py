@@ -144,7 +144,7 @@ def main(filename, args, ifold=0, trial=0, quotient=None, device='cuda', is_cuda
         model = MLP_Drop(num_layers, hdims, args.lr, args.lambda_l2, is_cuda=is_cuda)
         optimizer = optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.lambda_l2)
     elif args.model_type == 'bptt':
-        model = BPTTRNN(2, 100, 1, args.lr, args.lambda_l2, is_cuda=is_cuda)
+        model = BPTTRNN(2, 300, 1, args.lr, args.lambda_l2, is_cuda=is_cuda)
         optimizer = optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.lambda_l2)
     else:
         model = MLP(num_layers, hdims, args.lr, args.lambda_l2, is_cuda=is_cuda)
@@ -182,16 +182,16 @@ def main(filename, args, ifold=0, trial=0, quotient=None, device='cuda', is_cuda
     script_dir = os.path.dirname(__file__)  # Get the directory of the current script
     filename = os.path.join(script_dir, filename)  # Build the relative path
 
-    np.savez(filename+'.npz'
-            , Wn=Wn_list
-            , lr=lr_list
-            , l2=l2_list
-            , gang_list=gang_list
-            , dFdlr_list=dFdlr_list
-            , dFdl2_list=dFdl2_list
-            , tr_loss=tr_loss_list
-            , vl_loss=vl_loss_list
-            , te_loss=te_loss_list)
+    # np.savez(filename+'.npz'
+    #         , Wn=Wn_list
+    #         , lr=lr_list
+    #         , l2=l2_list
+    #         , gang_list=gang_list
+    #         , dFdlr_list=dFdlr_list
+    #         , dFdl2_list=dFdl2_list
+    #         , tr_loss=tr_loss_list
+    #         , vl_loss=vl_loss_list
+    #         , te_loss=te_loss_list)
 
 
     # np.save(filename+'Wn', Wn_list)
@@ -480,13 +480,13 @@ if __name__ == '__main__':
     args.update_freq = 1
     args.save = 1
     args.model_type = 'bptt'
-    args.num_epoch = 200
+    args.num_epoch = 500
     args.save_dir = "results"
     args.batch_size = 100
     args.reset_freq = 0 
     args.batch_size_vl = 1
     args.task = 'sin'  # oho can't solve random case
-    args.t1 = 5
+    args.t1 = 1
     args.t2 = 1
     args.outT = 9
     args.seq = 10
@@ -495,13 +495,13 @@ if __name__ == '__main__':
     args.numVl = 1000
     args.numTe = 200
 
-    filenames = [f'exp3/trial{i}' for i in range(24)]
+    # filenames = [f'exp3/trial{i}' for i in range(24)]
 
 
     is_cuda = args.is_cuda
 
-    for filename in filenames:
-        model = main(filename, args, ifold=ifold, is_cuda=is_cuda)
+    # for filename in filenames:
+    model = main("./test", args, ifold=ifold, is_cuda=is_cuda)
 
     # print(model.b_rec_, model.b_out_)
 

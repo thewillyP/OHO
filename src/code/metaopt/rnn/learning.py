@@ -60,6 +60,7 @@ def repeatRnnWithReset(t: Union[HasActivation[ENV, A], HasParameter[ENV, P], Has
         return foldr(resetter)(xs, env)
     return repeat_
 
+# to add oho, literally just call fuse with the oho function 
 
 
 
@@ -74,25 +75,16 @@ PARAM =  tuple[torch.Tensor
 MODEL = VanillaRnnState[torch.Tensor, torch.Tensor, PARAM]
 
 
-def rnnTrans(activation: Callable) -> Callable[[torch.Tensor, tuple[torch.Tensor, torch.Tensor, torch.Tensor, float], torch.Tensor], torch.Tensor]:
-    def rnnTrans_(x: torch.Tensor, param: tuple[torch.Tensor, torch.Tensor, torch.Tensor, float], h: torch.Tensor) -> torch.Tensor:
-        W_rec, W_in, b_rec, alpha = param
-        return (1-alpha ) * h + alpha * activation(f.linear(x, W_in, None) + f.linear(h, W_rec, b_rec))
-    return rnnTrans_
-# (W_rec_, W_in_, b_rec_, W_out_, b_out_, alpha_))
+def rnnTrans(activation: Callable, x: torch.Tensor, param: tuple[torch.Tensor, torch.Tensor, torch.Tensor, float], h) -> torch.Tensor:
+    W_rec, W_in, b_rec, alpha = param
+    return (1-alpha ) * h + alpha * activation(f.linear(x, W_in, None) + f.linear(h, W_rec, b_rec))
+
 def activationTrans(activationFn: Callable[[torch.Tensor], torch.Tensor]):
     def activationTrans_(t: Union[HasActivation[MODEL, torch.Tensor], HasParameter[MODEL, PARAM]]) -> Callable[[torch.Tensor, MODEL], MODEL]:
         def activationTrans__(x: torch.Tensor, env: MODEL) -> MODEL:
             a = t.getActivation(env)
             W_rec, W_in, b_rec, _, _, alpha = t.getParameter(env)
-
-            # norms = []
-            # for param in t.getParameter(env)[:-1]:
-            #     norms.append(param.norm().item())  # Get the norm as a scalar
-            # avg_param_norm = sum(norms) / len(norms)
-            # print(avg_param_norm)
-
-            a_ = rnnTrans(activationFn)(x, (W_rec, W_in, b_rec, alpha), a)
+            a_ = rnnTrans(activationFn, x, (W_rec, W_in, b_rec, alpha), a)
             return t.putActivation(a_, env)
         return activationTrans__
     return activationTrans_
@@ -109,9 +101,6 @@ def activationTrans(activationFn: Callable[[torch.Tensor], torch.Tensor]):
 #             return t.putActivation(as__, env)
 #         return activationTrans__
 #     return activationTrans_
-
-
-
 # doing multiple layers is just a fold over it
 
 def predictTrans(t: Union[HasActivation[MODEL, torch.Tensor], HasParameter[MODEL, PARAM]]) -> Callable[[MODEL], tuple[MODEL, torch.Tensor]]:
@@ -128,31 +117,14 @@ def lossTrans(t: Union[HasLoss[MODEL, torch.Tensor]]) -> Callable[[torch.Tensor,
         return t.putLoss(loss, env)
     return lossTrans_
 
-step = 0
-losses = []
-param_norms = []
+
 def parameterTrans(opt):
     def parameterTrans_(t: Union[HasParameter[MODEL, PARAM], HasLoss[MODEL, torch.Tensor]]) -> Callable[[MODEL], MODEL]:
         def parameterTrans__(env: MODEL) -> MODEL:
-            global step, losses, param_norms
             opt.zero_grad() 
             loss = t.getLoss(env)
-
-            # make_dot(loss, params=dict(t.getParameter(env).named_parameters())).render("working", format="png")
             loss.backward()
             opt.step()  # will actuall physically spooky mutate the param so no update needed. 
-            if (step+1) % 100 == 0:
-                # make_dot(loss, params=dict({i: a for i, a in enumerate(t.getParameter(env)[:-1])})).render("graph1", format="png")
-                # quit()
-                print (f'Step [{step+1}], Loss: {loss.item():.4f}')
-            losses.append(loss.item())
-            step += 1
-
-            # norms = []
-            # for param in t.getParameter(env)[:-1]:
-            #     norms.append(param.norm().item())  # Get the norm as a scalar
-            # avg_param_norm = sum(norms) / len(norms)
-            # param_norms.append(avg_param_norm)
             return env
         return parameterTrans__
     return parameterTrans_
@@ -166,9 +138,13 @@ def trainRnn(t: VanillaRnnStateInterpreter
     learn = learnStep(t, rnn, lossTrans, parameterTrans(optimizer))
     return repeatRnnWithReset(t, learn)
 
-
 def pyTorchRnn(t: Union[HasParameter[MODEL, PARAM]]) -> Callable[[torch.Tensor, MODEL], tuple[MODEL, torch.Tensor]]:
     def predictTrans_(x: torch.Tensor, env: MODEL) -> tuple[MODEL, torch.Tensor]:
         model = t.getParameter(env)
         return env, model(x)
     return predictTrans_
+
+def oho(t: Union[HasParameter[MODEL, PARAM], HasHyperParameter[MODEL, HP]]) -> Callable[[MODEL], MODEL]:
+    def oho_(env: MODEL) -> MODEL:
+        return t.putHyperParameter(t.getHyperParameter(env), env)
+    return oho_

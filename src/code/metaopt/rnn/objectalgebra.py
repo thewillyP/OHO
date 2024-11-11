@@ -61,14 +61,6 @@ class HasHyperParameter(Generic[ENV, T], metaclass=ABCMeta):
 
 # ============== Instance ==============
 
-class OhoState(Generic[A, B, C, D]): 
-    def __init__(self, activation: A, loss: B, parameter: C, hyperParameter: D):
-        self.activation = activation
-        self.loss = loss
-        self.parameter = parameter
-        self.hyperParameter = hyperParameter
-    
-
 @dataclass(frozen=True)
 class VanillaRnnState(Generic[A, B, C]):
     activation: A
@@ -176,3 +168,41 @@ class QuadrupleInterpreter(ActivationQuadrupleInterpreter, LossQuadrupleInterpre
     
 # downside is that I need to create a whole new class that inherits all the instantiations. 
 # I will just maintain and reedit my god instance interpreter. Best compromise. Not truly extensible but I have full control. 
+
+@dataclass(frozen=True)
+class OhoState(Generic[A, B, C, D]): 
+    activation: A
+    loss: B
+    parameter: C
+    hyperparameter: D
+    
+class ActivationOhoStateInterpreter(HasActivation[OhoState[A, B, C, D], A]):
+    def getActivation(self, env):
+        return env.activation
+    
+    def putActivation(self, s, env):
+        return OhoState(s, env.loss, env.parameter, env.hyperparameter)
+    
+class LossOhoStateInterpreter(HasLoss[OhoState[A, B, C, D], B]):
+    def getLoss(self, env):
+        return env.loss
+    
+    def putLoss(self, s, env):
+        return OhoState(env.activation, s, env.parameter, env.hyperparameter)
+    
+class ParameterOhoStateInterpreter(HasParameter[OhoState[A, B, C, D], C]):
+    def getParameter(self, env):
+        return env.parameter
+    
+    def putParameter(self, s, env):
+        return OhoState(env.activation, env.loss, s, env.hyperparameter)
+    
+class HyperParameterOhoStateInterpreter(HasHyperParameter[OhoState[A, B, C, D], D]):
+    def getHyperParameter(self, env):
+        return env.hyperparameter
+    
+    def putHyperParameter(self, s, env):
+        return OhoState(env.activation, env.loss, env.parameter, s)
+
+class OhoStateInterpreter(ActivationOhoStateInterpreter, LossOhoStateInterpreter, ParameterOhoStateInterpreter, HyperParameterOhoStateInterpreter):
+    pass
