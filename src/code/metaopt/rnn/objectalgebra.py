@@ -1,14 +1,9 @@
 from abc import ABCMeta, abstractmethod
-from functools import reduce
-from typing import Callable, List, TypeVar, Generic, Iterator, Union
-from toolz.curried import curry, compose, map
+from typing import TypeVar, Generic
 from torch.nn import functional as f
-import torch
 from dataclasses import dataclass
 from func import *
-from matplotlib import pyplot as plt
-from torchviz import make_dot
-from operator import add
+
 
 
 T = TypeVar('T')

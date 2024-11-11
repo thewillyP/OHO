@@ -50,7 +50,6 @@ def resetLoss(t: Union[HasLoss[ENV, L]]  # TODO: generalize this
     return fmapPrefix(reset_, resetee)
 
 
-
 def repeatRnnWithReset(t: Union[HasActivation[ENV, A], HasParameter[ENV, P], HasLoss[ENV, L]]
                 , repeatee: Callable[[X, ENV], ENV]) -> Callable[[Iterator[X], ENV], ENV]:
     def repeat_(xs: Iterator[X], env: ENV) -> ENV:
