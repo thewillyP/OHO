@@ -117,14 +117,18 @@ def lossTrans(t: Union[HasLoss[MODEL, torch.Tensor]]) -> Callable[[torch.Tensor,
         return t.putLoss(loss, env)
     return lossTrans_
 
-
+step = 0
 def parameterTrans(opt):
     def parameterTrans_(t: Union[HasParameter[MODEL, PARAM], HasLoss[MODEL, torch.Tensor]]) -> Callable[[MODEL], MODEL]:
         def parameterTrans__(env: MODEL) -> MODEL:
+            global step
             opt.zero_grad() 
             loss = t.getLoss(env)
             loss.backward()
             opt.step()  # will actuall physically spooky mutate the param so no update needed. 
+            step += 1
+            if step % 100 == 0:
+                print(f'Step [{step}] Loss: {loss.item()}')
             return env
         return parameterTrans__
     return parameterTrans_
@@ -148,3 +152,4 @@ def oho(t: Union[HasParameter[MODEL, PARAM], HasHyperParameter[MODEL, HP]]) -> C
     def oho_(env: MODEL) -> MODEL:
         return t.putHyperParameter(t.getHyperParameter(env), env)
     return oho_
+

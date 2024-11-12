@@ -4,7 +4,6 @@ import numpy as np
 from typing import Callable
 from toolz import curry, compose
 import matplotlib.pyplot as plt
-from myfunc import *
 import torch
 from torch.utils.data import TensorDataset, DataLoader
 

@@ -12,6 +12,11 @@ __pycache__/
 *.npy
 *.pdf
 *.png
+wandb/*
+**/wandb/
+wandb/latest-run/*
+wandb/
+
 
 # C extensions
 *.so
