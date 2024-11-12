@@ -109,7 +109,12 @@ def compose2(f: Callable[[A], B], g: Callable[[B], C]) -> Callable[[A], C]:
         return g(f(a))
     return compose2_
 
-# fmap = flip(compose2)
+def fmap(g: Callable[[B], C], f: Callable[[A], B]) -> Callable[[A], C]:
+    # fmap = flip(compose2)  # want the syntax highlight so resort to this code dup
+    def fmap_(a: A) -> C:
+        return g(f(a))
+    return fmap_
+
 
 
 

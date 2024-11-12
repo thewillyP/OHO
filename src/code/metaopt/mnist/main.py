@@ -279,7 +279,7 @@ def train(args, dataset, model, optimizer, saveF=0, is_cuda=1):
                     model.reset_jacob() 
 
                 """ meta update only uses most recent gradient on the update freq. feval resets gradient everytime its called. so meta_update will not use the sum of gradients """
-                if args.oho == 1 and counter % args.update_freq == 0 and args.mlr != 0.0 and counter >= 5000:
+                if args.oho == 1 and counter % args.update_freq == 0 and args.mlr != 0.0 and counter >= 0:
                     data_vl, target_vl = next(dataset[VALID])
                     data_vl, target_vl = to_torch_variable(data_vl, target_vl, is_cuda)
                     model, loss_vl, optimizer = meta_update(args, data_vl, target_vl, data, target, model, optimizer, noise, is_cuda=is_cuda)

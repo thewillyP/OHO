@@ -41,6 +41,16 @@ class HasLoss(Generic[ENV, T], metaclass=ABCMeta):
     def putLoss(self, s: T, env: ENV) -> ENV:
         pass
 
+
+class HasPrediction(Generic[ENV, T], metaclass=ABCMeta):
+    @abstractmethod
+    def getPrediction(self, env: ENV) -> T:
+        pass
+
+    @abstractmethod
+    def putPrediction(self, s: T, env: ENV) -> ENV:
+        pass
+
 class HasParameter(Generic[ENV, T], metaclass=ABCMeta):
     @abstractmethod
     def getParameter(self, env: ENV) -> T:
@@ -62,34 +72,42 @@ class HasHyperParameter(Generic[ENV, T], metaclass=ABCMeta):
 # ============== Instance ==============
 
 @dataclass(frozen=True)
-class VanillaRnnState(Generic[A, B, C]):
+class VanillaRnnState(Generic[A, B, C, D]):
     activation: A
     loss: B
     parameter: C
+    prediction: D
 
 
-class ActivationVanillaRnnStateInterpreter(HasActivation[VanillaRnnState[A, B, C], A]):
+class ActivationVanillaRnnStateInterpreter(HasActivation[VanillaRnnState[A, B, C, D], A]):
     def getActivation(self, env):
         return env.activation
     
     def putActivation(self, s, env):
-        return VanillaRnnState(s, env.loss, env.parameter)
+        return VanillaRnnState(s, env.loss, env.parameter, env.prediction)
     
-class LossVanillaRnnStateInterpreter(HasLoss[VanillaRnnState[A, B, C], B]):
+class LossVanillaRnnStateInterpreter(HasLoss[VanillaRnnState[A, B, C, D], B]):
     def getLoss(self, env):
         return env.loss
     
     def putLoss(self, s, env):
-        return VanillaRnnState(env.activation, s, env.parameter)
+        return VanillaRnnState(env.activation, s, env.parameter, env.prediction)
 
-class ParameterVanillaRnnStateInterpreter(HasParameter[VanillaRnnState[A, B, C], C]):
+class ParameterVanillaRnnStateInterpreter(HasParameter[VanillaRnnState[A, B, C, D], C]):
     def getParameter(self, env):
         return env.parameter
     
     def putParameter(self, s, env):
-        return VanillaRnnState(env.activation, env.loss, s)
+        return VanillaRnnState(env.activation, env.loss, s, env.prediction)
+
+class PredictionVanillaRnnStateInterpreter(HasPrediction[VanillaRnnState[A, B, C, D], D]):
+    def getPrediction(self, env):
+        return env.prediction
     
-class VanillaRnnStateInterpreter(ActivationVanillaRnnStateInterpreter, LossVanillaRnnStateInterpreter, ParameterVanillaRnnStateInterpreter):
+    def putPrediction(self, s, env):
+        return VanillaRnnState(env.activation, env.loss, env.parameter, s)
+    
+class VanillaRnnStateInterpreter(ActivationVanillaRnnStateInterpreter, LossVanillaRnnStateInterpreter, ParameterVanillaRnnStateInterpreter, PredictionVanillaRnnStateInterpreter):
     pass
 
 class ActivationTripletInterpreter(HasActivation[tuple[A, B, C], A]):
