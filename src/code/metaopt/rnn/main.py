@@ -13,7 +13,7 @@ from memory_profiler import profile
 
 
 
-num_epochs = 25
+num_epochs = 50
 batch_size = 100
 hidden_size = 200
 
@@ -100,4 +100,64 @@ run()
 
 
 
-# %%
+
+
+
+
+# # Hyper-parameters 
+# # input_size = 784 # 28x28
+# num_classes = 10
+# num_epochs = 2
+# batch_size = 100
+
+# input_size = 28
+# sequence_length = 28
+# hidden_size = 128
+# num_layers = 1
+
+# alpha_ = 1
+# activation_ = f.tanh
+# learning_rate = 0.001
+
+
+
+
+# # MNIST dataset 
+# train_dataset = torchvision.datasets.MNIST(root='./data', 
+#                                         train=True, 
+#                                         transform=transforms.ToTensor(),  
+#                                         download=True)
+
+# test_dataset = torchvision.datasets.MNIST(root='./data', 
+#                                         train=False, 
+#                                         transform=transforms.ToTensor())
+
+# # Data loader
+# train_loader = torch.utils.data.DataLoader(dataset=train_dataset, 
+#                                         batch_size=batch_size, 
+#                                         shuffle=True)
+# test_loader = torch.utils.data.DataLoader(dataset=test_dataset, 
+#                                         batch_size=batch_size, 
+#                                         shuffle=False)
+# cleanData = map(lambda pair: (pair[0].squeeze(1).permute(1, 0, 2), pair[1])) # origin shape: [N, 1, 28, 28] -> resized: [28, N, 28]
+# epochs = [cleanData(train_loader) for _ in range(num_epochs)]
+
+
+
+# W_rec_, W_in_, b_rec_, W_out_, b_out_ = initializeParametersIO(input_size, hidden_size, num_classes)
+# alpha_ = 1
+# optimizer = torch.optim.Adam((W_rec_, W_in_, b_rec_, W_out_, b_out_), lr=learning_rate) 
+# a0 = torch.zeros(1, hidden_size, dtype=torch.float32)
+
+# state0 = VanillaRnnState( a0
+#                         , 0
+#                         , (W_rec_, W_in_, b_rec_, W_out_, b_out_, alpha_)
+#                         , 0)
+
+# evolveStep = compose2(activationTrans(activation_), foldr)
+# predictionStep = liftA2(fmapSuffix, predictTrans, evolveStep)
+# lossStep = liftA2(fuse, predictionStep, lossTrans(f.cross_entropy))
+# paramStep = liftA2(fmapSuffix, parameterTrans(optimizer), lossStep)
+# trainFn = liftA2(apply, repeatRnnWithReset, paramStep)
+# trainEpochsFn = liftA2(apply, repeatRnnWithReset, trainFn)(VanillaRnnStateInterpreter())
+# stateTrained = trainEpochsFn(epochs, state0)

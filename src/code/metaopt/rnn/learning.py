@@ -192,7 +192,7 @@ def parameterTrans(opt):
             loss.backward()
             opt.step()  # will actuall physically spooky mutate the param so no update needed. 
             step += 1
-            if step % 1 == 0:
+            if step % 100 == 0:
                 print(f'Step [{step}] Loss: {loss.item()}')
             return env
         return parameterTrans__
