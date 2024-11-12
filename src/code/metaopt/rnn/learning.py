@@ -1,6 +1,5 @@
 from objectalgebra import *
 from typing import Callable, TypeVar, Iterator, Union
-from line_profiler import profile
 
 T = TypeVar('T')
 E = TypeVar('E')
@@ -91,7 +90,6 @@ def resetLoss(t: Union[HasLoss[ENV, L]]) -> Callable[[Callable[[X, ENV], T], L],
 #         return foldr(resetter)(xs, env)
 #     return repeat_
 
-@profile
 def repeatRnnWithReset(t: Union[HasActivation[ENV, A], HasParameter[ENV, P], HasLoss[ENV, L]]) -> Callable[[Callable[[X, ENV], ENV]], Callable[[Iterator[X], ENV], ENV]]:
     def repeat_(repeatee: Callable[[X, ENV], ENV]) -> Callable[[Iterator[X], ENV], ENV]:
         def repeat__(xs: Iterator[X], env: ENV) -> ENV:
@@ -131,12 +129,10 @@ PARAM =  tuple[torch.Tensor
 
 MODEL = VanillaRnnState[torch.Tensor, torch.Tensor, PARAM, torch.Tensor]
 
-@profile
 def rnnTrans(activation: Callable, x: torch.Tensor, param: tuple[torch.Tensor, torch.Tensor, torch.Tensor, float], h) -> torch.Tensor:
     W_rec, W_in, b_rec, alpha = param
     return (1-alpha ) * h + alpha * activation(f.linear(x, W_in, None) + f.linear(h, W_rec, b_rec))
 
-@profile
 def activationTrans(activationFn: Callable[[torch.Tensor], torch.Tensor]):
     def activationTrans_(t: Union[HasActivation[MODEL, torch.Tensor], HasParameter[MODEL, PARAM]]) -> Callable[[torch.Tensor, MODEL], MODEL]:
         def activationTrans__(x: torch.Tensor, env: MODEL) -> MODEL:
@@ -160,7 +156,7 @@ def activationTrans(activationFn: Callable[[torch.Tensor], torch.Tensor]):
 #         return activationTrans__
 #     return activationTrans_
 # doing multiple layers is just a fold over it
-@profile
+
 def predictTrans(t: Union[
     HasActivation[MODEL, torch.Tensor]
     , HasParameter[MODEL, PARAM]
@@ -171,7 +167,7 @@ def predictTrans(t: Union[
         pred = f.linear(a, W_out, b_out)
         return t.putPrediction(pred, env)
     return predictTrans_
-@profile
+
 def lossTrans(criterion: Callable):
     def lossTrans_(t: Union[HasLoss[MODEL, torch.Tensor], HasPrediction[MODEL, torch.Tensor]]) -> Callable[[torch.Tensor, MODEL], MODEL]:
         def lossTrans__(y: torch.Tensor, env: MODEL) -> MODEL:
@@ -182,7 +178,6 @@ def lossTrans(criterion: Callable):
     return lossTrans_
 
 step = 0
-@profile
 def parameterTrans(opt):
     def parameterTrans_(t: Union[HasParameter[MODEL, PARAM], HasLoss[MODEL, torch.Tensor]]) -> Callable[[MODEL], MODEL]:
         def parameterTrans__(env: MODEL) -> MODEL:
@@ -192,13 +187,12 @@ def parameterTrans(opt):
             loss.backward()
             opt.step()  # will actuall physically spooky mutate the param so no update needed. 
             step += 1
-            if step % 100 == 0:
+            if step % 1 == 0:
                 print(f'Step [{step}] Loss: {loss.item()}')
             return env
         return parameterTrans__
     return parameterTrans_
 
-@profile
 def getRnn(t: VanillaRnnStateInterpreter, activationFn) -> Callable[[Iterator[torch.Tensor], MODEL], tuple[MODEL, torch.Tensor]]:
     return offlineRnnPredict(t, activationTrans(activationFn), predictTrans)
 
