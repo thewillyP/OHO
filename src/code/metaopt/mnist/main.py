@@ -522,20 +522,20 @@ if __name__ == '__main__':
     args.update_freq = 1
     args.save = 1
     args.model_type = 'bptt'
-    args.num_epoch = 2000
+    args.num_epoch = 10000
     args.save_dir = "results"
     args.batch_size = 200
     args.reset_freq = 0 
     args.batch_size_vl = 1
-    args.task = 'random'  # oho can't solve random case
+    args.task = 'sparse'  # oho can't solve random case
     args.t1 = 5
     args.t2 = 1
     args.outT = 9
     args.seq = 10
     args.oho = 0
-    args.numTr = 5000
-    args.numVl = 5000
-    args.numTe = 200
+    args.numTr = 1000
+    args.numVl = 1000
+    args.numTe = 1000
 
     # start a new wandb run to track this script
     wandb.init(

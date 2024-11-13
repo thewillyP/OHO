@@ -16,44 +16,14 @@ import wandb
 np.random.seed(0)
 torch.random.manual_seed(0)
 
-def initParam(n_in: int, n_h: int, n_out: int
-                        ) -> tuple[torch.nn.Parameter, torch.nn.Parameter, torch.nn.Parameter, torch.nn.Parameter, torch.nn.Parameter]:
-    W_in = np.random.normal(0, np.sqrt(1/(n_in)), (n_h, n_in))
-    W_rec = np.linalg.qr(np.random.normal(0, 1, (n_h, n_h)))[0]
-    W_out = np.random.normal(0, np.sqrt(1/(n_out)), (n_out, n_h))
-    b_rec = np.random.normal(0, np.sqrt(1/(n_h)), (n_h,))
-    b_out = np.random.normal(0, np.sqrt(1/(n_out)), (n_out,))
-    b_in = np.random.normal(0, np.sqrt(1/(n_h)), (n_h,))
-
-    # W_in = np.random.uniform(-np.sqrt(1/(n_h)), np.sqrt(1/(n_h)), (n_h, n_in))
-    # W_rec = np.random.uniform(-np.sqrt(1/(n_h)), np.sqrt(1/(n_h)), (n_h, n_h))
-    # W_out = np.random.uniform(-np.sqrt(1/(n_out)), np.sqrt(1/(n_out)), (n_out, n_h))
-    # b_rec = np.random.uniform(-np.sqrt(1/(n_h)), np.sqrt(1/(n_h)), (n_h,))
-    # b_out = np.random.uniform(-np.sqrt(1/(n_out)), np.sqrt(1/(n_out)), (n_out,))
-
-
-
-    # _W_rec = torch.nn.Parameter(torch.tensor(W_rec, requires_grad=True, dtype=torch.float32))
-    # _W_in = torch.nn.Parameter(torch.tensor(W_in, requires_grad=True, dtype=torch.float32))
-    # _b_rec = torch.nn.Parameter(torch.tensor(b_rec, requires_grad=True, dtype=torch.float32))
-    # _W_out = torch.nn.Parameter(torch.tensor(W_out, requires_grad=True, dtype=torch.float32))
-    # _b_out = torch.nn.Parameter(torch.tensor(b_out, requires_grad=True, dtype=torch.float32))
-    _W_rec = torch.nn.Parameter(torch.from_numpy(W_rec).float().requires_grad_())
-    _W_in = torch.nn.Parameter(torch.from_numpy(W_in).float().requires_grad_())
-    _b_rec = torch.nn.Parameter(torch.from_numpy(b_rec).float().requires_grad_())
-    _W_out = torch.nn.Parameter(torch.from_numpy(W_out).float().requires_grad_())
-    _b_out = torch.nn.Parameter(torch.from_numpy(b_out).float().requires_grad_())
-    b_in = torch.nn.Parameter(torch.from_numpy(b_in).float().requires_grad_())
-
-    return _W_rec, _W_in, _b_rec, _W_out, _b_out, b_in
-
 # def initParam(n_in: int, n_h: int, n_out: int
 #                         ) -> tuple[torch.nn.Parameter, torch.nn.Parameter, torch.nn.Parameter, torch.nn.Parameter, torch.nn.Parameter]:
 #     W_in = np.random.normal(0, np.sqrt(1/(n_in)), (n_h, n_in))
 #     W_rec = np.linalg.qr(np.random.normal(0, 1, (n_h, n_h)))[0]
-#     W_out = np.random.normal(0, np.sqrt(1/(n_h)), (n_out, n_h))
+#     W_out = np.random.normal(0, np.sqrt(1/(n_out)), (n_out, n_h))
 #     b_rec = np.random.normal(0, np.sqrt(1/(n_h)), (n_h,))
 #     b_out = np.random.normal(0, np.sqrt(1/(n_out)), (n_out,))
+#     b_in = np.random.normal(0, np.sqrt(1/(n_h)), (n_h,))
 
 #     # W_in = np.random.uniform(-np.sqrt(1/(n_h)), np.sqrt(1/(n_h)), (n_h, n_in))
 #     # W_rec = np.random.uniform(-np.sqrt(1/(n_h)), np.sqrt(1/(n_h)), (n_h, n_h))
@@ -73,8 +43,38 @@ def initParam(n_in: int, n_h: int, n_out: int
 #     _b_rec = torch.nn.Parameter(torch.from_numpy(b_rec).float().requires_grad_())
 #     _W_out = torch.nn.Parameter(torch.from_numpy(W_out).float().requires_grad_())
 #     _b_out = torch.nn.Parameter(torch.from_numpy(b_out).float().requires_grad_())
+#     b_in = torch.nn.Parameter(torch.from_numpy(b_in).float().requires_grad_())
 
-#     return _W_rec, _W_in, _b_rec, _W_out, _b_out
+#     return _W_rec, _W_in, _b_rec, _W_out, _b_out, b_in
+
+def initParam(n_in: int, n_h: int, n_out: int
+                        ) -> tuple[torch.nn.Parameter, torch.nn.Parameter, torch.nn.Parameter, torch.nn.Parameter, torch.nn.Parameter]:
+    W_in = np.random.normal(0, np.sqrt(1/(n_in)), (n_h, n_in))
+    W_rec = np.linalg.qr(np.random.normal(0, 1, (n_h, n_h)))[0]
+    W_out = np.random.normal(0, np.sqrt(1/(n_h)), (n_out, n_h))
+    b_rec = np.random.normal(0, np.sqrt(1/(n_h)), (n_h,))
+    b_out = np.random.normal(0, np.sqrt(1/(n_out)), (n_out,))
+
+    # W_in = np.random.uniform(-np.sqrt(1/(n_h)), np.sqrt(1/(n_h)), (n_h, n_in))
+    # W_rec = np.random.uniform(-np.sqrt(1/(n_h)), np.sqrt(1/(n_h)), (n_h, n_h))
+    # W_out = np.random.uniform(-np.sqrt(1/(n_out)), np.sqrt(1/(n_out)), (n_out, n_h))
+    # b_rec = np.random.uniform(-np.sqrt(1/(n_h)), np.sqrt(1/(n_h)), (n_h,))
+    # b_out = np.random.uniform(-np.sqrt(1/(n_out)), np.sqrt(1/(n_out)), (n_out,))
+
+
+
+    # _W_rec = torch.nn.Parameter(torch.tensor(W_rec, requires_grad=True, dtype=torch.float32))
+    # _W_in = torch.nn.Parameter(torch.tensor(W_in, requires_grad=True, dtype=torch.float32))
+    # _b_rec = torch.nn.Parameter(torch.tensor(b_rec, requires_grad=True, dtype=torch.float32))
+    # _W_out = torch.nn.Parameter(torch.tensor(W_out, requires_grad=True, dtype=torch.float32))
+    # _b_out = torch.nn.Parameter(torch.tensor(b_out, requires_grad=True, dtype=torch.float32))
+    _W_rec = torch.nn.Parameter(torch.from_numpy(W_rec).float().requires_grad_())
+    _W_in = torch.nn.Parameter(torch.from_numpy(W_in).float().requires_grad_())
+    _b_rec = torch.nn.Parameter(torch.from_numpy(b_rec).float().requires_grad_())
+    _W_out = torch.nn.Parameter(torch.from_numpy(W_out).float().requires_grad_())
+    _b_out = torch.nn.Parameter(torch.from_numpy(b_out).float().requires_grad_())
+
+    return _W_rec, _W_in, _b_rec, _W_out, _b_out
 
 class BPTTRNN(nn.Module):
 
@@ -82,28 +82,28 @@ class BPTTRNN(nn.Module):
         super(BPTTRNN, self).__init__()
 
 
-        # self.W_rec_, self.W_in_, self.b_rec_, self.W_out_, self.b_out_ = initParam(n_in, n_h, n_out)
-        # self.rnn = compose(drop(1)
-        #                 ,  scan(rnnTransition(self.W_in_, self.W_rec_, self.b_rec_, f.relu, 1)))
-        # self.fc = linear_(self.W_out_,self.b_out_)
-        # self.initH = lambda x: torch.zeros(x.size(0), n_h).to('cpu' if is_cuda==0 else 'gpu') 
+        self.W_rec_, self.W_in_, self.b_rec_, self.W_out_, self.b_out_ = initParam(n_in, n_h, n_out)
+        self.rnn = compose(drop(1)
+                        ,  scan(rnnTransition(self.W_in_, self.W_rec_, self.b_rec_, f.relu, 1)))
+        self.fc = linear_(self.W_out_,self.b_out_)
+        self.initH = lambda x: torch.zeros(x.size(0), n_h).to('cpu' if is_cuda==0 else 'gpu') 
         
-        self.rnn = nn.RNN(n_in, n_h, 1, batch_first=False, nonlinearity='relu')  # sampels weights from uniform which is pretty big
-        self.fc = nn.Linear(n_h, n_out)
-        self.initH = lambda x: torch.zeros(1, x.size(1), n_h).to('cpu' if is_cuda==0 else 'gpu') 
-        _W_rec, _W_in, _b_rec, _W_out, _b_out, _b_in = initParam(n_in, n_h, n_out)
+        # self.rnn = nn.RNN(n_in, n_h, 1, batch_first=False, nonlinearity='relu')  # sampels weights from uniform which is pretty big
+        # self.fc = nn.Linear(n_h, n_out)
+        # self.initH = lambda x: torch.zeros(1, x.size(1), n_h).to('cpu' if is_cuda==0 else 'gpu') 
+        # _W_rec, _W_in, _b_rec, _W_out, _b_out, _b_in = initParam(n_in, n_h, n_out)
 
         # Assign custom weights and biases to self.rnn
         # print(self.rnn.weight_hh_l0.data)
-        with torch.no_grad():
-            self.rnn.weight_hh_l0.copy_(_W_rec)
-            self.rnn.weight_ih_l0.copy_(_W_in)
-            self.rnn.bias_hh_l0.copy_(_b_rec)
-            self.rnn.bias_ih_l0.copy_(_b_in)
+        # with torch.no_grad():
+        #     self.rnn.weight_hh_l0.copy_(_W_rec)
+        #     self.rnn.weight_ih_l0.copy_(_W_in)
+        #     self.rnn.bias_hh_l0.copy_(_b_rec)
+        #     self.rnn.bias_ih_l0.copy_(_b_in)
         
-            # Assign custom weights and biases to self.fc
-            self.fc.weight.copy_(_W_out)
-            self.fc.bias.copy_(_b_out)
+        #     # Assign custom weights and biases to self.fc
+        #     self.fc.weight.copy_(_W_out)
+        #     self.fc.bias.copy_(_b_out)
 
 
         # self.reshapeImage = lambda images: images.view(-1, sequence_length, n_in).to('cpu' if is_cuda==0 else 'gpu')
@@ -139,24 +139,24 @@ class BPTTRNN(nn.Module):
         # print(x.shape)
         # quit()
 
-        # h0 = self.initH(x)  # ordering... need fist dimension to be batch size
-        # x = x.permute(1, 0, 2)
+        h0 = self.initH(x)  # ordering... need fist dimension to be batch size
+        x = x.permute(1, 0, 2)
         
-        # # print(h0.shape)
-        # x = self.rnn(h0, x)
-        # x = list(x)
-        # x = torch.stack(x)
-        # # x = x[:, -1, :]
-        # x = self.fc(x)
-        # # x = f.linear(x, self.W_out_, self.b_out_)
-        # x = x.permute(1, 0, 2)
-        # return x
+        # print(h0.shape)
+        x = self.rnn(h0, x)
+        x = list(x)
+        x = torch.stack(x)
+        # x = x[:, -1, :]
+        x = self.fc(x)
+        # x = f.linear(x, self.W_out_, self.b_out_)
+        x = x.permute(1, 0, 2)
+        return x
     
 
-        h0 = self.initH(x)
-        x, _ = self.rnn(x, h0)
-        x = self.fc(x)
-        return x
+        # h0 = self.initH(x)
+        # x, _ = self.rnn(x, h0)
+        # x = self.fc(x)
+        # return x
 
 
         # if logsoftmaxF:
