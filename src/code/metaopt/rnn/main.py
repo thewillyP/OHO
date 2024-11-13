@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader
 from line_profiler import profile
 import wandb
 from matplotlib.ticker import MaxNLocator
+from pyrsistent import pdeque, PDeque
 # from memory_profiler import profile
 
 
@@ -43,6 +44,19 @@ def parameterTrans(opt, lossFn):
         return parameterTrans__
     return parameterTrans_
 
+
+def predictAccum(t: Union[
+    HasActivation[MODEL, torch.Tensor]
+    , HasParameter[MODEL, PARAM]
+    , HasPrediction[MODEL, PDeque[torch.Tensor]]]) -> Callable[[MODEL], MODEL]:
+    def predictTrans_(env: MODEL) -> MODEL:
+        a = t.getActivation(env)
+        _, _, _, W_out, b_out, _ = t.getParameter(env)
+        pred = f.linear(a, W_out, b_out)
+        predAccum = t.getPrediction(env).append(pred)
+        env_ = t.putPrediction(predAccum, env)
+        return env_
+    return predictTrans_
 
 
 num_epochs = 100
@@ -84,9 +98,10 @@ alpha_ = 1
 optimizer = torch.optim.Adam((W_rec_, W_in_, b_rec_, W_out_, b_out_), lr=learning_rate) 
 a0 = torch.zeros(1, hidden_size, dtype=torch.float32)
 
-state0 = VanillaRnnState( a0
+state0 = VanillaRnnStatePred( a0
                         , 0
-                        , (W_rec_, W_in_, b_rec_, W_out_, b_out_, alpha_))
+                        , (W_rec_, W_in_, b_rec_, W_out_, b_out_, alpha_)
+                        , 0)
 
 
 
@@ -95,23 +110,27 @@ predictionStep = liftA2(fmapSuffix, predictTrans, activationTrans(activation_))
 lossStep = liftA2(fuse, predictionStep, lossTrans(f.mse_loss))
 loss = compose2(lossStep, foldr)
 
-def modePrediction(env: VanillaRnnState, xs: Iterator[torch.Tensor]) -> Iterator[torch.Tensor]:
-    predictor = predictionStep(VanillaRnnStateInterpreter())
-    predictor = fmapSuffix(snd, predictor)
-    return map(lambda x: predictor(x, env), xs)
-
+# I have to define a whole new prediction function because there is literally two different ways to go about it.
+def modePrediction(env: VanillaRnnStatePred[torch.Tensor, torch.Tensor, PARAM, PDeque[torch.Tensor]]
+                , xs: Iterator[torch.Tensor]) -> Iterator[torch.Tensor]:
+    pStep = liftA2(fmapSuffix, predictAccum, activationTrans(activation_))
+    # If I really want to be exact about it, I would switch out my interpreter here to disallow learning. 
+    predictor = pStep(VanillaRnnStatePredInterpreter())
+    prediction = foldr(predictor)(xs, env)
+    return VanillaRnnStatePredInterpreter().getPrediction(prediction)
 
 
 
 def avgLossFn(env):
-    env = VanillaRnnStateInterpreter().putActivation(a0, env)
-    env = VanillaRnnStateInterpreter().putLoss(0, env)
+    env = VanillaRnnStatePredInterpreter().putActivation(a0, env)
+    env = VanillaRnnStatePredInterpreter().putLoss(0, env)
     rnnPredictor_ = liftA2(apply, repeatRnnWithReset_, loss) 
-    return rnnPredictor_(VanillaRnnStateInterpreter())(cleanData(test_loader), env).loss / len(test_loader)
+    return rnnPredictor_(VanillaRnnStatePredInterpreter())(cleanData(test_loader), env).loss / len(test_loader)
+
 
 paramStep = liftA2(fmapSuffix, parameterTrans(optimizer, avgLossFn), loss)
 trainFn = liftA2(apply, repeatRnnWithReset, paramStep)
-trainEpochsFn = liftA2(apply, repeatRnnWithReset, trainFn)(VanillaRnnStateInterpreter())
+trainEpochsFn = liftA2(apply, repeatRnnWithReset, trainFn)(VanillaRnnStatePredInterpreter())
 start = time.time()
 stateTrained = trainEpochsFn(epochs, state0)
 print(time.time() - start)
@@ -123,19 +142,20 @@ def plotIO2(model, env):
         data, labels = next(iter(test_loader))
         xs = data[0]
         ys = labels[0]
-        print(ys)
-        print(env.activation)
+        # print(ys)
+        # print(env.activation)
 
         predicts = model(env, xs)
         predicts = torch.tensor(list(predicts))
-        print(predicts)
+        # print(predicts)
         plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
         plt.plot(torch.arange(0, 10), ys, torch.arange(0, 10), predicts.flatten().detach().numpy(), marker='o')
         # plt.savefig('../../figs/mnist/loss_lr.png', format='png')
         plt.show()
 
-stateTrained = VanillaRnnStateInterpreter().putActivation(a0, stateTrained)
-plotIO2(modePrediction, stateTrained)
+posteriorState = VanillaRnnStatePred(a0, 0, stateTrained.parameter, pdeque([]))
+
+plotIO2(modePrediction, posteriorState)
 
 """
 The problem with wanting to extract predictions out of a fold is that it really is a side effect.

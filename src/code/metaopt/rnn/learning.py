@@ -102,24 +102,43 @@ def activationTrans(activationFn: Callable[[torch.Tensor], torch.Tensor]):
 #     return activationTrans_
 # doing multiple layers is just a fold over it
 
-def predictTrans(t: Union[HasActivation[MODEL, torch.Tensor], HasParameter[MODEL, PARAM]]) -> Callable[[MODEL], tuple[MODEL, torch.Tensor]]:
-    def predictTrans_(env: MODEL) -> tuple[MODEL, torch.Tensor]:
+# def predictTrans(t: Union[HasActivation[MODEL, torch.Tensor], HasParameter[MODEL, PARAM]]) -> Callable[[MODEL], tuple[MODEL, torch.Tensor]]:
+#     def predictTrans_(env: MODEL) -> tuple[MODEL, torch.Tensor]:
+#         a = t.getActivation(env)
+#         _, _, _, W_out, b_out, _ = t.getParameter(env)
+#         return env, f.linear(a, W_out, b_out)
+#     return predictTrans_
+
+
+# def lossTrans(criterion: Callable):
+#     def lossTrans_(t: Union[HasLoss[MODEL, torch.Tensor]]) -> Callable[[torch.Tensor, tuple[MODEL, torch.Tensor]], MODEL]:
+#         def lossTrans__(y: torch.Tensor, pair: tuple[MODEL, torch.Tensor]) -> MODEL:
+#             env, prediction = pair
+#             loss = criterion(prediction, y) + t.getLoss(env)
+#             return t.putLoss(loss, env)
+#         return lossTrans__
+#     return lossTrans_
+
+
+def predictTrans(t: Union[
+    HasActivation[MODEL, torch.Tensor]
+    , HasParameter[MODEL, PARAM]
+    , HasPrediction[MODEL, torch.Tensor]]) -> Callable[[MODEL], MODEL]:
+    def predictTrans_(env: MODEL) -> MODEL:
         a = t.getActivation(env)
         _, _, _, W_out, b_out, _ = t.getParameter(env)
-        return env, f.linear(a, W_out, b_out)
+        pred = f.linear(a, W_out, b_out)
+        return t.putPrediction(pred, env)
     return predictTrans_
 
-
 def lossTrans(criterion: Callable):
-    def lossTrans_(t: Union[HasLoss[MODEL, torch.Tensor]]) -> Callable[[torch.Tensor, tuple[MODEL, torch.Tensor]], MODEL]:
-        def lossTrans__(y: torch.Tensor, pair: tuple[MODEL, torch.Tensor]) -> MODEL:
-            env, prediction = pair
+    def lossTrans_(t: Union[HasLoss[MODEL, torch.Tensor], HasPrediction[MODEL, torch.Tensor]]) -> Callable[[torch.Tensor, MODEL], MODEL]:
+        def lossTrans__(y: torch.Tensor, env: MODEL) -> MODEL:
+            prediction = t.getPrediction(env)
             loss = criterion(prediction, y) + t.getLoss(env)
             return t.putLoss(loss, env)
         return lossTrans__
     return lossTrans_
-
-
 
 
 
