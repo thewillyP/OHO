@@ -97,11 +97,19 @@ def repeatRnnWithReset(t: Union[HasActivation[ENV, A], HasParameter[ENV, P], Has
             l0 = t.getLoss(env)
             resetter = resetRnnActivation(t)(repeatee, a0)
             resetter = resetLoss(t)(resetter, l0)
-            env = t.putPrediction(0, env)
             return foldr(resetter)(xs, env)
         return repeat__
     return repeat_
 
+
+def repeatRnnWithReset_(t: Union[HasActivation[ENV, A], HasParameter[ENV, P], HasLoss[ENV, L]]) -> Callable[[Callable[[X, ENV], ENV]], Callable[[Iterator[X], ENV], ENV]]:
+    def repeat_(repeatee: Callable[[X, ENV], ENV]) -> Callable[[Iterator[X], ENV], ENV]:
+        def repeat__(xs: Iterator[X], env: ENV) -> ENV:
+            a0 = t.getActivation(env)
+            resetter = resetRnnActivation(t)(repeatee, a0)
+            return foldr(resetter)(xs, env)
+        return repeat__
+    return repeat_
 
 # def repeatRnnWithReset(t: Union[HasActivation[ENV, A], HasParameter[ENV, P], HasLoss[ENV, L]]) -> Callable[[Callable[[X, ENV], ENV]], Callable[[Iterator[X], ENV], ENV]]:
 #     def repeat_(repeatee: Callable[[X, ENV], ENV]
@@ -127,7 +135,7 @@ PARAM =  tuple[torch.Tensor
             , torch.Tensor
             , float]
 
-MODEL = VanillaRnnState[torch.Tensor, torch.Tensor, PARAM, torch.Tensor]
+MODEL = VanillaRnnState[torch.Tensor, torch.Tensor, PARAM]
 
 def rnnTrans(activation: Callable, x: torch.Tensor, param: tuple[torch.Tensor, torch.Tensor, torch.Tensor, float], h) -> torch.Tensor:
     W_rec, W_in, b_rec, alpha = param
@@ -157,25 +165,44 @@ def activationTrans(activationFn: Callable[[torch.Tensor], torch.Tensor]):
 #     return activationTrans_
 # doing multiple layers is just a fold over it
 
-def predictTrans(t: Union[
-    HasActivation[MODEL, torch.Tensor]
-    , HasParameter[MODEL, PARAM]
-    , HasPrediction[MODEL, torch.Tensor]]) -> Callable[[MODEL], MODEL]:
-    def predictTrans_(env: MODEL) -> MODEL:
+def predictTrans(t: Union[HasActivation[MODEL, torch.Tensor], HasParameter[MODEL, PARAM]]) -> Callable[[MODEL], tuple[MODEL, torch.Tensor]]:
+    def predictTrans_(env: MODEL) -> tuple[MODEL, torch.Tensor]:
         a = t.getActivation(env)
         _, _, _, W_out, b_out, _ = t.getParameter(env)
-        pred = f.linear(a, W_out, b_out)
-        return t.putPrediction(pred, env)
+        return env, f.linear(a, W_out, b_out)
     return predictTrans_
 
+
 def lossTrans(criterion: Callable):
-    def lossTrans_(t: Union[HasLoss[MODEL, torch.Tensor], HasPrediction[MODEL, torch.Tensor]]) -> Callable[[torch.Tensor, MODEL], MODEL]:
-        def lossTrans__(y: torch.Tensor, env: MODEL) -> MODEL:
-            prediction = t.getPrediction(env)
+    def lossTrans_(t: Union[HasLoss[MODEL, torch.Tensor]]) -> Callable[[torch.Tensor, tuple[MODEL, torch.Tensor]], MODEL]:
+        def lossTrans__(y: torch.Tensor, pair: tuple[MODEL, torch.Tensor]) -> MODEL:
+            env, prediction = pair
             loss = criterion(prediction, y) + t.getLoss(env)
             return t.putLoss(loss, env)
         return lossTrans__
     return lossTrans_
+
+
+
+# def predictTrans(t: Union[
+#     HasActivation[MODEL, torch.Tensor]
+#     , HasParameter[MODEL, PARAM]
+#     , HasPrediction[MODEL, torch.Tensor]]) -> Callable[[MODEL], MODEL]:
+#     def predictTrans_(env: MODEL) -> MODEL:
+#         a = t.getActivation(env)
+#         _, _, _, W_out, b_out, _ = t.getParameter(env)
+#         pred = f.linear(a, W_out, b_out)
+#         return t.putPrediction(pred, env)
+#     return predictTrans_
+
+# def lossTrans(criterion: Callable):
+#     def lossTrans_(t: Union[HasLoss[MODEL, torch.Tensor], HasPrediction[MODEL, torch.Tensor]]) -> Callable[[torch.Tensor, MODEL], MODEL]:
+#         def lossTrans__(y: torch.Tensor, env: MODEL) -> MODEL:
+#             prediction = t.getPrediction(env)
+#             loss = criterion(prediction, y) + t.getLoss(env)
+#             return t.putLoss(loss, env)
+#         return lossTrans__
+#     return lossTrans_
 
 step = 0
 def parameterTrans(opt):
@@ -187,7 +214,7 @@ def parameterTrans(opt):
             loss.backward()
             opt.step()  # will actuall physically spooky mutate the param so no update needed. 
             step += 1
-            if step % 1 == 0:
+            if step % 10 == 0:
                 print(f'Step [{step}] Loss: {loss.item()}')
             return env
         return parameterTrans__

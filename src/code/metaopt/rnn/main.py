@@ -1,4 +1,5 @@
 from itertools import cycle
+import time
 import torch 
 from torch.nn import functional as f
 import matplotlib.pyplot as plt
@@ -8,12 +9,36 @@ from delayed_add_task import createExamplesIO, randomSineExampleIO, randomSparse
 from learning import *
 from torch.utils.data import TensorDataset
 from torch.utils.data import DataLoader
-# from line_profiler import profile
-from memory_profiler import profile
+from line_profiler import profile
+import wandb
+# from memory_profiler import profile
 
 
+# wandb.init(
+#         # set the wandb project where this run will be logged
+#         project="my-awesome-project",
 
-num_epochs = 50
+#         # track hyperparameters and run metadata
+#         config={
+#             "tr_loss": 0.0,
+#             "vl_loss": 0.0,
+#             "te_loss": 0.0,
+#             "eta": args.lr,
+#             "l2": args.lambda_l2,
+#             "dFdlr": 0.0,
+#             "dFdl2": 0.0,
+#             "grad_norm": 0.0,
+#             "grad_norm_vl": 0.0,
+#             "gang": 0.0,
+#             "param_norm": 0.0,
+#             "grad_corr_mean": 0.0,
+#             "grad_corr_std": 0.0,
+#             "Hv_lr": 0.0    
+#         }
+#     )
+
+
+num_epochs = 100
 batch_size = 100
 hidden_size = 200
 
@@ -61,8 +86,7 @@ a0 = torch.zeros(1, hidden_size, dtype=torch.float32)
 
 state0 = VanillaRnnState( a0
                         , 0
-                        , (W_rec_, W_in_, b_rec_, W_out_, b_out_, alpha_)
-                        , 0)
+                        , (W_rec_, W_in_, b_rec_, W_out_, b_out_, alpha_))
 
 
 # because loss is on the per step basis, we have to combine loss at the online level
@@ -74,12 +98,30 @@ def run():
     loss = compose2(lossStep, foldr)
     paramStep = liftA2(fmapSuffix, parameterTrans(optimizer), loss)
     trainFn = liftA2(apply, repeatRnnWithReset, paramStep)
+
+    # state = state0
+    # for ds in epochs:
+    #     state = VanillaRnnStateInterpreter().putActivation(a0, state)
+    #     state = VanillaRnnStateInterpreter().putLoss(0, state)
+    #     state = trainFn(VanillaRnnStateInterpreter())(ds, state)
     trainEpochsFn = liftA2(apply, repeatRnnWithReset, trainFn)(VanillaRnnStateInterpreter())
     stateTrained = trainEpochsFn(epochs, state0)
 
-run()
+    stateTrained_ = VanillaRnnStateInterpreter().putActivation(a0, stateTrained)
+    stateTrained_ = VanillaRnnStateInterpreter().putLoss(0, stateTrained_)
+    # x = compose2(predictionStep(VanillaRnnStateInterpreter()), snd)
 
-# rnnPredictor_ = liftA2(apply, repeatRnnWithReset, loss)
+    rnnPredictor_ = liftA2(apply, repeatRnnWithReset, loss) 
+    with torch.no_grad():
+        avgloss = rnnPredictor_(VanillaRnnStateInterpreter())(cleanData(test_loader), stateTrained_).loss / len(test_loader)
+        print(f'Average test loss: {avgloss}')
+
+
+
+start = time.time()
+run()
+print(time.time() - start)
+
 
 # rnnPredictor_ = resetRnnActivation(VanillaRnnStateInterpreter(), fmapSuffix(snd, rnn), a0)
 # # print average test mse loss
