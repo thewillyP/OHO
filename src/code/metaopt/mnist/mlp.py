@@ -82,15 +82,17 @@ class BPTTRNN(nn.Module):
         super(BPTTRNN, self).__init__()
 
 
-        self.W_rec_, self.W_in_, self.b_rec_, self.W_out_, self.b_out_ = initParam(n_in, n_h, n_out)
-        self.rnn = compose(drop(1)
-                        ,  scan(rnnTransition(self.W_in_, self.W_rec_, self.b_rec_, f.relu, 1)))
-        self.fc = linear_(self.W_out_,self.b_out_)
-        self.initH = lambda x: torch.zeros(x.size(0), n_h).to('cpu' if is_cuda==0 else 'gpu') 
+        # self.W_rec_, self.W_in_, self.b_rec_, self.W_out_, self.b_out_ = initParam(n_in, n_h, n_out)
+        # self.rnn = compose(drop(1)
+        #                 ,  scan(rnnTransition(self.W_in_, self.W_rec_, self.b_rec_, f.relu, 1)))
+        # self.fc = linear_(self.W_out_,self.b_out_)
+        # self.initH = lambda x: torch.zeros(x.size(0), n_h).to('cpu' if is_cuda==0 else 'gpu') 
         
-        # self.rnn = nn.RNN(n_in, n_h, 1, batch_first=False, nonlinearity='relu')  # sampels weights from uniform which is pretty big
-        # self.fc = nn.Linear(n_h, n_out)
-        # self.initH = lambda x: torch.zeros(1, x.size(1), n_h).to('cpu' if is_cuda==0 else 'gpu') 
+        self.rnn = nn.RNN(n_in, n_h, 1, batch_first=True, nonlinearity='relu')  # sampels weights from uniform which is pretty big
+        self.fc = nn.Linear(n_h, n_out)
+        self.initH = lambda x: torch.zeros(1, x.size(0), n_h).to('cpu' if is_cuda==0 else 'gpu') 
+        self._initialize_weights()
+
         # _W_rec, _W_in, _b_rec, _W_out, _b_out, _b_in = initParam(n_in, n_h, n_out)
 
         # Assign custom weights and biases to self.rnn
@@ -123,6 +125,17 @@ class BPTTRNN(nn.Module):
         self.param_norm = 0
         self.dFdlr_norm = 0
         self.dFdl2_nrom = 0
+    
+
+    def _initialize_weights(self):
+        for name, param in self.rnn.named_parameters():
+            if 'weight' in name:
+                torch.nn.init.xavier_uniform_(param)
+            elif 'bias' in name:
+                torch.nn.init.zeros_(param)  # It’s often a good practice to zero the biases
+        
+        torch.nn.init.xavier_uniform_(self.fc.weight)
+        torch.nn.init.zeros_(self.fc.bias)
 
     def reset_jacob(self, is_cuda=1):
         self.dFdlr = torch.zeros(self.n_params) 
@@ -139,24 +152,25 @@ class BPTTRNN(nn.Module):
         # print(x.shape)
         # quit()
 
-        h0 = self.initH(x)  # ordering... need fist dimension to be batch size
-        x = x.permute(1, 0, 2)
+        # h0 = self.initH(x)  # ordering... need fist dimension to be batch size
+        # x = x.permute(1, 0, 2)
         
-        # print(h0.shape)
-        x = self.rnn(h0, x)
-        x = list(x)
-        x = torch.stack(x)
-        # x = x[:, -1, :]
-        x = self.fc(x)
-        # x = f.linear(x, self.W_out_, self.b_out_)
-        x = x.permute(1, 0, 2)
-        return x
-    
-
-        # h0 = self.initH(x)
-        # x, _ = self.rnn(x, h0)
+        # # print(h0.shape)
+        # x = self.rnn(h0, x)
+        # x = list(x)
+        # x = torch.stack(x)
+        # # x = x[:, -1, :]
         # x = self.fc(x)
+        # # x = f.linear(x, self.W_out_, self.b_out_)
+        # x = x.permute(1, 0, 2)
         # return x
+    
+        
+        h0 = self.initH(x)
+
+        x, _ = self.rnn(x, h0)
+        x = self.fc(x)
+        return x
 
 
         # if logsoftmaxF:

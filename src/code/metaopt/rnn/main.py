@@ -91,9 +91,9 @@ def load_random(seq_length, t1, t2):
     ts = torch.arange(0, seq_length)
     return load_adder_task(createExamplesIO2, generate_random_lists, t1, t2, ts)
 
-# loader = load_sparse(19)(18, 11, torch.arange(0, 10))
+loader = load_sparse(9)(5, 1, torch.arange(0, 10))
 # loader = load_sinadder(10, 7, torch.arange(0, 20))
-loader = load_random(20, 10, 7)
+# loader = load_random(20, 10, 7)
 
 train_loader, _, test_loader = getDataset(loader, 1000, 1000, 1000)
 

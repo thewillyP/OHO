@@ -516,13 +516,13 @@ if __name__ == '__main__':
     args = Arg()
     args.is_cuda = 0
     args.mlr = 0.00001
-    args.lr = 0.001
+    args.lr = 0.01
     args.lambda_l2 = 0.
     args.opt_type = "sgd"
     args.update_freq = 1
     args.save = 1
     args.model_type = 'bptt'
-    args.num_epoch = 10000
+    args.num_epoch = 300
     args.save_dir = "results"
     args.batch_size = 200
     args.reset_freq = 0 
@@ -532,7 +532,7 @@ if __name__ == '__main__':
     args.t2 = 1
     args.outT = 9
     args.seq = 10
-    args.oho = 0
+    args.oho = 1
     args.numTr = 1000
     args.numVl = 1000
     args.numTe = 1000
