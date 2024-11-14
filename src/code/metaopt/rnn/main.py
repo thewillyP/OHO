@@ -28,7 +28,7 @@ wandb.init(
         }
     )
 
-
+step = 0
 def parameterTrans(opt, lossFn):
     def parameterTrans_(t: Union[HasParameter[MODEL, PARAM], HasLoss[MODEL, torch.Tensor]]) -> Callable[[MODEL], MODEL]:
         def parameterTrans__(env: MODEL) -> MODEL:
@@ -37,9 +37,12 @@ def parameterTrans(opt, lossFn):
             loss = t.getLoss(env)
             loss.backward()
             opt.step()  # will actuall physically spooky mutate the param so no update needed. 
+            step += 1
             with torch.no_grad():
                 wandb.log({"tr_loss": loss.item()})
                 wandb.log({"te_loss": lossFn(env)})
+                if step % 10 == 0:
+                    print(f"Step {step}, Loss {loss.item()}")
             return env
         return parameterTrans__
     return parameterTrans_
