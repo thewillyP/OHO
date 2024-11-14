@@ -279,7 +279,7 @@ def train(args, dataset, model, optimizer, saveF=0, is_cuda=1):
                     model.reset_jacob() 
 
                 """ meta update only uses most recent gradient on the update freq. feval resets gradient everytime its called. so meta_update will not use the sum of gradients """
-                if args.oho == 1 and counter % args.update_freq == 0 and args.mlr != 0.0 and counter >= 0:
+                if args.oho == 1 and counter % args.update_freq == 0 and args.mlr != 0.0 and counter >= 5000:
                     data_vl, target_vl = next(dataset[VALID])
                     data_vl, target_vl = to_torch_variable(data_vl, target_vl, is_cuda)
                     model, loss_vl, optimizer = meta_update(args, data_vl, target_vl, data, target, model, optimizer, noise, is_cuda=is_cuda)
@@ -416,7 +416,7 @@ def feval(data, target, model, optimizer, mode='eval', is_cuda=0, opt_type='sgd'
     noise = None
     if 'train' in mode:
         loss.backward()  # check how getting bacthed, try gigureout out how gradient modificat
-        # torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
+        # torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
 
         for i,param in enumerate(model.parameters()):
             if opt_type == 'sgld':
@@ -452,14 +452,19 @@ def feval(data, target, model, optimizer, mode='eval', is_cuda=0, opt_type='sgd'
 def meta_update(args, data_vl, target_vl, data_tr, target_tr, model, optimizer, noise=None, is_cuda=1):
     #Compute Hessian Vector Product
     param_shapes = model.param_shapes
+    
     dFdlr = unflatten_array(model.dFdlr, model.param_cumsum, param_shapes)
     Hv_lr  = compute_HessianVectorProd_MSE(model, dFdlr, data_tr, target_tr, is_cuda=is_cuda)
-    wandb.log({
-        "Hv_lr": norm(Hv_lr)
-    })
 
     dFdl2 = unflatten_array(model.dFdl2, model.param_cumsum, param_shapes)
     Hv_l2  = compute_HessianVectorProd_MSE(model, dFdl2, data_tr, target_tr, is_cuda=is_cuda)
+
+    
+
+    wandb.log({
+        "Hv_lr": norm(Hv_lr),
+        "Hv_l2": norm(Hv_l2),
+    })
 
     model, loss_valid, grad_valid = get_grad_valid(model, data_vl, target_vl, is_cuda)
     #model, loss_valid, grad_valid = get_grad_valid(model, data_tr, target_tr, is_cuda)
@@ -475,10 +480,10 @@ def meta_update(args, data_vl, target_vl, data_tr, target_tr, model, optimizer, 
 
     #Update hyper-parameters   
     model.update_dFdlr(Hv_lr, param, grad, is_cuda, noise=noise)
-    model.update_eta(args.mlr, val_grad=grad_valid)
+    # model.update_eta(args.mlr, val_grad=grad_valid)
     param = flatten_array_w_0bias(model.parameters()).data
     model.update_dFdlambda_l2(Hv_l2, param, grad, is_cuda)
-    model.update_lambda(args.mlr*0.01, val_grad=grad_valid)
+    # model.update_lambda(args.mlr*0.01, val_grad=grad_valid)
 
     #Update optimizer with new eta
     optimizer = update_optimizer_hyperparams(args, model, optimizer)
@@ -517,17 +522,17 @@ if __name__ == '__main__':
     args.is_cuda = 0
     args.mlr = 0.00001
     args.lr = 0.01
-    args.lambda_l2 = 0.
+    args.lambda_l2 = 0
     args.opt_type = "sgd"
     args.update_freq = 1
     args.save = 1
     args.model_type = 'bptt'
-    args.num_epoch = 300
+    args.num_epoch = 1000
     args.save_dir = "results"
     args.batch_size = 200
     args.reset_freq = 0 
     args.batch_size_vl = 1
-    args.task = 'sparse'  # oho can't solve random case
+    args.task = 'random'  # oho can't solve random case
     args.t1 = 5
     args.t2 = 1
     args.outT = 9
@@ -557,7 +562,8 @@ if __name__ == '__main__':
             "param_norm": 0.0,
             "grad_corr_mean": 0.0,
             "grad_corr_std": 0.0,
-            "Hv_lr": 0.0    
+            "Hv_lr": 0.0,
+            "Hv_l2": 0.0,    
         }
     )
 

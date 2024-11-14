@@ -98,8 +98,8 @@ def randomSineExampleIO(t1: float, t2: float):
 
 @curry
 def randomSparseIO(outT: float, t1: float, t2: float):
-        a_ = np.random.uniform(-2, 2)
-        b_ = np.random.uniform(-2, 2)
+        a_ = np.random.uniform(-1, 1)
+        b_ = np.random.uniform(-1, 1)
         t1d = 1 #RNG.uniform(0, 2)
         t2d = 1 #RNG.uniform(0, 2)
         x1, x2, y = createAddMemoryTask(t1, t2, a_, b_, t1d, t2d, outT)

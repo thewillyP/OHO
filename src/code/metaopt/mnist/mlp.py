@@ -76,6 +76,21 @@ def initParam(n_in: int, n_h: int, n_out: int
 
     return _W_rec, _W_in, _b_rec, _W_out, _b_out
 
+
+def block_orthogonal_init(size, block_size, frequency=np.pi/8, amplitude=(0.9, 0.999)):
+    W = np.zeros((size, size))
+    num_blocks = size // block_size
+    for i in range(num_blocks):
+        theta = np.random.uniform(-frequency, frequency)  # Random small rotation
+        amplitude_val = np.random.uniform(*amplitude)     # Random amplitude scaling
+        rotation_matrix = amplitude_val * np.array([[np.cos(theta), -np.sin(theta)],
+                                                    [np.sin(theta), np.cos(theta)]])
+        
+        start = i * block_size
+        W[start:start+2, start:start+2] = rotation_matrix  # Assign 2x2 rotation matrix to block
+    return W
+
+
 class BPTTRNN(nn.Module):
 
     def __init__(self, n_in: int, n_h: int, n_out: int, lr_init, lambda_l2, is_cuda=0):
@@ -132,6 +147,7 @@ class BPTTRNN(nn.Module):
             if 'weight' in name:
                 torch.nn.init.xavier_uniform_(param)
             elif 'bias' in name:
+                # torch.nn.init.uniform_(param, a=0.01, b=0.1)
                 torch.nn.init.zeros_(param)  # It’s often a good practice to zero the biases
         
         torch.nn.init.xavier_uniform_(self.fc.weight)
@@ -221,7 +237,7 @@ class BPTTRNN(nn.Module):
         delta = val_grad.dot(self.dFdl2).data.cpu().numpy()
         self.lambda_l2 -= mlr * delta 
         self.lambda_l2 = np.maximum(0, self.lambda_l2)
-        self.lambda_l2 = np.minimum(0.0002, self.lambda_l2)
+        # self.lambda_l2 = np.minimum(0.0002, self.lambda_l2)
 
 class MLP_Drop(nn.Module):
 
