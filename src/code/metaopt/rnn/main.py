@@ -6,7 +6,7 @@ from torch.nn import functional as f
 import matplotlib.pyplot as plt
 import torchvision
 import torchvision.transforms as transforms
-from delayed_add_task import createExamplesIO, randomSineExampleIO, randomSparseIO
+from delayed_add_task import createExamplesIO, createExamplesIO2, generate_random_lists, randomSineExampleIO, randomSparseIO
 from learning import *
 from torch.utils.data import TensorDataset
 from torch.utils.data import DataLoader
@@ -39,9 +39,9 @@ def parameterTrans(opt, lossFn):
             opt.step()  # will actuall physically spooky mutate the param so no update needed. 
             step += 1
             with torch.no_grad():
-                wandb.log({"tr_loss": loss.item()})
-                wandb.log({"te_loss": lossFn(env)})
                 if step % 10 == 0:
+                    wandb.log({"tr_loss": loss.item()})
+                    wandb.log({"te_loss": lossFn(env)})
                     print(f"Step {step}, Loss {loss.item()}")
             return env
         return parameterTrans__
@@ -62,9 +62,9 @@ def predictAccum(t: Union[
     return predictTrans_
 
 
-num_epochs = 100
+num_epochs = 200
 batch_size = 100
-hidden_size = 200
+hidden_size = 120
 
 alpha_ = 1
 activation_ = f.relu
@@ -87,7 +87,14 @@ def load_adder_task(randomExamplesIO, randomAdderIO, t1: float, t2: float, ts, n
 
 load_sinadder = load_adder_task(createExamplesIO, randomSineExampleIO)
 load_sparse = lambda outT: load_adder_task(createExamplesIO, randomSparseIO(outT))
-loader = load_sparse(9)(5, 1, torch.arange(0, 10))
+def load_random(seq_length, t1, t2):
+    ts = torch.arange(0, seq_length)
+    return load_adder_task(createExamplesIO2, generate_random_lists, t1, t2, ts)
+
+# loader = load_sparse(19)(18, 11, torch.arange(0, 10))
+# loader = load_sinadder(10, 7, torch.arange(0, 20))
+loader = load_random(20, 10, 7)
+
 train_loader, _, test_loader = getDataset(loader, 1000, 1000, 1000)
 
 # cleanData = map(lambda pair: (pair[0].permute(1, 0, 2), pair[1].permute(1, 0, 2))) # origin shape: [N, 1, 28, 28] -> resized: [28, N, 28]
@@ -152,7 +159,7 @@ def plotIO2(model, env):
         predicts = torch.tensor(list(predicts))
         # print(predicts)
         plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
-        plt.plot(torch.arange(0, 10), ys, torch.arange(0, 10), predicts.flatten().detach().numpy(), marker='o')
+        plt.plot(torch.arange(0, 20), ys, torch.arange(0, 20), predicts.flatten().detach().numpy(), marker='o')
         # plt.savefig('../../figs/mnist/loss_lr.png', format='png')
         plt.show()
 
