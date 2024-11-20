@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import hashlib
 
 
+
 T = TypeVar('T')
 X = TypeVar('X')
 
@@ -30,12 +31,12 @@ def createUnitSignal(startTime: float, duration: float) -> Callable[[float], flo
 def createSparseSignal(amplitude: float, t0: float, duration: float):
     return compose(lambda x: amplitude*x, createUnitSignal(t0, duration))
 
-@curry
-def createDelayedAdder(  t1: float
-                        , t2: float
-                        , x1: Callable[[float], float]
-                        , x2: Callable[[float], float]) -> Callable[[float], float]:
-    return lambda t: x1(t - t1) + x2(t - t2)
+# @curry
+# def createDelayedAdder(  t1: float
+#                         , t2: float
+#                         , x1: Callable[[float], float]
+#                         , x2: Callable[[float], float]) -> Callable[[float], float]:
+#     return lambda t: x1(t - t1) + x2(t - t2)
 
 
 def sinWave(amplitude: float, frequency: float, phase_shift: float, bias: float):
@@ -47,89 +48,167 @@ def sparseSignal( startOffset: float
                 , outT: float):
     return createSparseSignal(a, outT - startOffset, dur)
 
+# @dataclass(frozen=True)
+# class WaveInitIO:
+#     initAmplitudeIO: Callable[[torch.Generator], float]
+#     initFrequencyIO: Callable[[torch.Generator], float]
+#     initPhaseShiftIO: Callable[[torch.Generator], float]
+#     initBiasIO: Callable[[torch.Generator], float]
+
+# @dataclass(frozen=True)
+# class SparseInitIO:
+#     initAmplitudeIO: Callable[[torch.Generator], float]
+#     initT0IO: Callable[[torch.Generator], float]
+#     initDurationIO: Callable[[torch.Generator], float]
+
+# @dataclass(frozen=True)
+# class RandomInitIO:
+#     randomFnIO: Callable[[torch.Generator], float]
+
+# @curry 
+# def waveIO(waveInitIO: WaveInitIO, generator: torch.Generator):
+#     amplitude = waveInitIO.initAmplitudeIO(generator)
+#     frequency = waveInitIO.initFrequencyIO(generator)
+#     phase_shift = waveInitIO.initPhaseShiftIO(generator)
+#     bias = waveInitIO.initBiasIO(generator)
+#     return sinWave(amplitude, frequency, phase_shift, bias)
+
+# @curry 
+# def sparseIO(sparseInitIO: SparseInitIO, generator: torch.Generator):
+#     amplitude = sparseInitIO.initAmplitudeIO(generator)
+#     t0 = sparseInitIO.initT0IO(generator)
+#     duration = sparseInitIO.initDurationIO(generator)
+#     return sparseSignal(amplitude, t0, duration)
+
+# @curry
+# def randomFnIO(randomInitIO: RandomInitIO, generator: torch.Generator):
+#     return lambda _: randomInitIO.randomFnIO(generator)
+
 @dataclass(frozen=True)
 class WaveInitIO:
-    initAmplitudeIO: Callable[[torch.Generator], float]
-    initFrequencyIO: Callable[[torch.Generator], float]
-    initPhaseShiftIO: Callable[[torch.Generator], float]
-    initBiasIO: Callable[[torch.Generator], float]
-
+    initAmplitudeIO: Callable[[], float]
+    initFrequencyIO: Callable[[], float]
+    initPhaseShiftIO: Callable[[], float]
+    initBiasIO: Callable[[], float]
 @dataclass(frozen=True)
 class SparseInitIO:
-    initAmplitudeIO: Callable[[torch.Generator], float]
-    initT0IO: Callable[[torch.Generator], float]
-    initDurationIO: Callable[[torch.Generator], float]
-
-@dataclass(frozen=True)
-class RandomInitIO:
-    randomFnIO: Callable[[torch.Generator], float]
-
-@curry 
-def waveIO(waveInitIO: WaveInitIO, globalSeed: int, state: int):
-    generator = hashSeed((globalSeed, state))
-    amplitude = waveInitIO.initAmplitudeIO(generator)
-    frequency = waveInitIO.initFrequencyIO(generator)
-    phase_shift = waveInitIO.initPhaseShiftIO(generator)
-    bias = waveInitIO.initBiasIO(generator)
-    return sinWave(amplitude, frequency, phase_shift, bias)
-
-@curry 
-def sparseIO(sparseInitIO: SparseInitIO, globalSeed: int, state: int):
-    generator = hashSeed((globalSeed, state))
-    amplitude = sparseInitIO.initAmplitudeIO(generator)
-    t0 = sparseInitIO.initT0IO(generator)
-    duration = sparseInitIO.initDurationIO(generator)
-    return sparseSignal(amplitude, t0, duration)
-
-@curry
-def randomFnIO(randomInitIO: RandomInitIO, globalSeed: int, state: int):
-    def rf(x):
-        seed = (globalSeed, state, x)
-        generator = hashSeed(seed)
-        return randomInitIO.randomFnIO(generator)
-    return rf
+    initAmplitudeIO: Callable[[], float]
+    initT0IO: Callable[[float], float]
+    initDurationIO: Callable[[], float]
+    outTIO : Callable[[], float]
 
 
-def randomFnIO(randomInitIO: RandomInitIO, generator):
-    personale = {}
-    def rf(x):
-        if x not in personale:
-            personale[x] = randomInitIO.randomFnIO(generator)
-        return personale[x]
-    return rf
-    
+def waveIO(waveInitIO: WaveInitIO):
+    amplitude = waveInitIO.initAmplitudeIO()
+    frequency = waveInitIO.initFrequencyIO()
+    phase_shift = waveInitIO.initPhaseShiftIO()
+    bias = waveInitIO.initBiasIO()
+    return lambda t, _: sinWave(amplitude, frequency, phase_shift, bias)(t)
 
 
-# def randomFunctionGeneratorIO(randFn: Callable[[int, int], Callable], globalSeed: int):
-#     state = 1
-#     while True:
-#         yield randFn(globalSeed, state)
-#         state += 1
+def sparseIO(sparseInitIO: SparseInitIO):
+    outT = sparseInitIO.outTIO()
+    def sparseFn(ts, t0):
+        t0 = sparseInitIO.initT0IO(t0)
+        amplitude = sparseInitIO.initAmplitudeIO()
+        duration = sparseInitIO.initDurationIO()
+        return sparseSignal(t0, amplitude, duration, outT)(ts)
+    return sparseFn, sparseFn
 
+def randomIO(ts, _):
+    return torch.randn(len(ts))
 
-def delayedAddGeneratorIO(t1: float, t2: float, randFn: Callable[[int, int], Callable], globalSeed: int, state1: int, state2: int):
-    x1 = randFn(globalSeed, state1)
-    x2 = randFn(globalSeed, state2)
-    y = createDelayedAdder(t1, t2, x1, x2)
+def createExample(t1, t2, ts, getRandFn):
+    randFn1, randFn2 = getRandFn()
+    x1 = randFn1(ts, t1)
+    x2 = randFn2(ts, t2)
+    y = torch.roll(x1, shifts=t1, dims=0) + torch.roll(x2, shifts=t2, dims=0)  # giving up on mathematically elegant y(t) = x(t - t1) + x(t - t2) bc computer can't support arbitrary precision. From now use integers only
+    mask = ts >= max(t1, t2) 
+    y = y * mask 
     return x1, x2, y
 
 
-def createExamples(t1, t2, numExamples, samples, randFn, globalSeed):
-    def generateExample(state):
-        s1, s2 = state
-        x1, x2, y = delayedAddGeneratorIO(t1, t2, randFn, globalSeed, s1, s2)
-        return torch.vmap(x1)(samples), torch.vmap(x2)(samples), torch.vmap(y)(samples)
-    
-    examples = torch.arange(0, numExamples * 2).reshape(numExamples, 2)
-    XS1, XS2, YS = torch.vmap(generateExample)(examples)
+def createExamples(n, randomMonad):
+    XS1, XS2, YS = torch.vmap(lambda _: randomMonad(), randomness='different')(torch.arange(n))
     combined_XS = torch.stack((XS1, XS2), dim=-1)
-    return combined_XS, YS
+    return combined_XS, YS.unsqueeze(-1)
 
 
-random_init = RandomInitIO(lambda gen: torch.randn(1, generator=gen).item())
-random_fn = randomFnIO(random_init)
-XS, YS = createExamples(3, 2, 3, torch.linspace(0, 15, 30), random_fn, 0)
-print(XS.shape, YS.shape)
+torch.manual_seed(0)
+
+s1 = SparseInitIO(lambda: torch.rand(1) - 0.5, lambda x: x, lambda: 1, lambda: 8)
+s2 = SparseInitIO(lambda: torch.rand(1) - 0.5, lambda x: x, lambda: 1, lambda: torch.randint(5, 10, (1,)))
+w1 = WaveInitIO(lambda: torch.rand(1), lambda: torch.rand(1)*100, lambda: torch.rand(1)*2*torch.pi, lambda: torch.rand(1)*2 - 1)
+
+randFn1 = randomIO
+randFn2 = randomIO
+getRandFn = lambda: (randFn1, randFn2)
+
+getRandFn = lambda: sparseIO(s1)
+
+getRandFn = lambda: (waveIO(w1), waveIO(w1))
+
+gen = lambda: createExample(5, 1, torch.arange(20), getRandFn)
+
+XS, YS = createExamples(50, gen)
+
+
+
+
+
+
+
+# def delayedAddGeneratorIO(t1: float, t2: float, samples: torch.Tensor, randFn1, randFn2):
+#     x1 = randFn1(samples, t1)
+#     x2 = randFn2(samples, t2)
+#     y = torch.roll(x1, shifts=t1, dims=0) + torch.roll(x2, shifts=t2, dims=0)  # giving up on mathematically elegant y(t) = x(t - t1) + x(t - t2) bc computer can't support arbitrary precision. From now use integers only
+#     mask = samples >= max(t1, t2) 
+#     y = y * mask 
+#     return x1, x2, y
+
+
+# def createExamples(t1, t2, numExamples, samples, randFn):
+#     XS1, XS2, YS = torch.vmap(lambda _: delayedAddGeneratorIO(t1, t2, samples, randFn), randomness='different')(torch.arange(numExamples))
+#     combined_XS = torch.stack((XS1, XS2), dim=-1)
+#     return combined_XS, YS.unsqueeze(-1)
+    
+
+
+
+# print(XS.shape, YS.shape)
+# print(XS[0])
+# print(YS[0])
+
+# for i in range(XS.size(0)):  # Loop over each example
+#     plt.figure(figsize=(10, 6))
+    
+#     # Plot features from X (features are in the 3rd dimension, here we plot both)
+#     plt.plot(range(XS.size(1)), XS[i, :, 0].numpy(), label=f'Feature 1 of Example {i+1}', color='b')
+#     plt.plot(range(XS.size(1)), XS[i, :, 1].numpy(), label=f'Feature 2 of Example {i+1}', color='g')
+    
+#     # Plot the output Y for the same example
+#     plt.plot(range(YS.size(1)), YS[i, :, 0].numpy(), label=f'Output of Example {i+1}', color='r')
+    
+#     plt.title(f'Time Series for Example {i+1}')
+#     plt.xlabel('Time')
+#     plt.ylabel('Value')
+#     plt.legend()
+#     plt.show()
+
+from matplotlib.ticker import MaxNLocator
+
+for i in range(YS.size(0)):  # Loop over each example
+    plt.plot(range(YS.size(1)), YS[i, :, 0].numpy(), 'o-', label=f'Example {i+1}')
+
+
+plt.title('Output Time Series for All Examples')
+plt.xlabel('Time')
+plt.ylabel('Output Value')
+# plt.legend()
+plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
+plt.show()
+
+
 
 
 # @curry
@@ -193,7 +272,6 @@ print(XS.shape, YS.shape)
 
 
 #%%
-
 
 # if __name__ == "__main__":
 
