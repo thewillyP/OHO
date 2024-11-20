@@ -8,6 +8,8 @@ import torch
 from torch.utils.data import TensorDataset, DataLoader
 from typing import TypeVar, Callable, Generic, Generator, Iterator
 from dataclasses import dataclass
+from enum import Enum
+
 
 
 
@@ -86,8 +88,8 @@ def createExamples(n, randomMonad):
 def visualizeOutput(YS):
     from matplotlib.ticker import MaxNLocator
 
-    for i in range(YS.size(0)):  # Loop over each example
-        plt.plot(range(YS.size(1)), YS[i, :, 0].numpy(), 'o-', label=f'Example {i+1}')
+    for ys in YS:  # Loop over each example
+        plt.plot(range(ys.size(0)), ys, 'o-')
 
 
     plt.title('Output Time Series for All Examples')
@@ -97,11 +99,29 @@ def visualizeOutput(YS):
     plt.show()
 
 
+class DatasetType(Enum):
+    Random = 1
+    Sparse = 2
+    Wave = 3
 
-sparseUniform = lambda outT: SparseInitIO(lambda: torch.rand(1) - 0.5, lambda x: x, lambda: 1, lambda: outT)
+
+sparseUniformConstOutT = lambda outT: SparseInitIO(lambda: torch.rand(1) - 0.5, lambda x: x, lambda: 1, lambda: outT)
+sparseUniform = SparseInitIO(lambda: torch.rand(1) - 0.5, lambda x: x, lambda: 1, lambda: torch.randint(5, 10, (1,)))
 waveArbitraryUniform = WaveInitIO(lambda: torch.rand(1), lambda: torch.rand(1)*100, lambda: torch.rand(1)*2*torch.pi, lambda: torch.rand(1)*2 - 1)
 randomUniform = lambda ts, _: torch.rand(len(ts)) - 0.5
 randomNormal = lambda ts, _: torch.randn(len(ts)) - 0.5
+# later in the future I can create a config file instead of having to manually change this code everytime
+
+# @curry
+def getDataLoaderIO(randFn, t1: int, t2: int, ts: torch.Tensor, numEx: int, batchSize: int):
+    gen = lambda: createDelayAddExample(t1, t2, ts, randFn)
+    XS, YS = createExamples(numEx, gen)
+    ds = TensorDataset(XS, YS)
+    dl = DataLoader(ds, batch_size=batchSize, shuffle=True)
+    return dl
+
+
+
 
 
 # %%

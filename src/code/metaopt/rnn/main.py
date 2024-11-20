@@ -6,7 +6,7 @@ from torch.nn import functional as f
 import matplotlib.pyplot as plt
 import torchvision
 import torchvision.transforms as transforms
-from delayed_add_task import createExamplesIO, createExamplesIO2, generate_random_lists, randomSineExampleIO, randomSparseIO
+from delayed_add_task import getDataLoaderIO, DatasetType, randomUniform, sparseIO, waveIO, waveArbitraryUniform, sparseUniformConstOutT, visualizeOutput
 from learning import *
 from torch.utils.data import TensorDataset
 from torch.utils.data import DataLoader
@@ -14,19 +14,19 @@ from line_profiler import profile
 import wandb
 from matplotlib.ticker import MaxNLocator
 from pyrsistent import pdeque, PDeque
-# from memory_profiler import profile
 
+torch.manual_seed(0)
 
-wandb.init(
-        # set the wandb project where this run will be logged
-        project="my-test-project",
+# wandb.init(
+#         # set the wandb project where this run will be logged
+#         project="my-test-project",
 
-        # track hyperparameters and run metadata
-        config={
-            "tr_loss": 0.0,
-            "te_loss": 0.0, 
-        }
-    )
+#         # track hyperparameters and run metadata
+#         config={
+#             "tr_loss": 0.0,
+#             "te_loss": 0.0, 
+#         }
+#     )
 
 step = 0
 def parameterTrans(opt, lossFn):
@@ -36,10 +36,12 @@ def parameterTrans(opt, lossFn):
             opt.zero_grad() 
             loss = t.getLoss(env)
             loss.backward()
+            W_rec, W_in, b_rec, W_out, b_out, _ = t.getParameter(env)
+            torch.nn.utils.clip_grad_norm_((W_rec, W_in, b_rec, W_out, b_out), 1)
             opt.step()  # will actuall physically spooky mutate the param so no update needed. 
             step += 1
             with torch.no_grad():
-                if step % 10 == 0:
+                if step % 1 == 0:
                     wandb.log({"tr_loss": loss.item()})
                     wandb.log({"te_loss": lossFn(env)})
                     print(f"Step {step}, Loss {loss.item()}")
@@ -62,40 +64,37 @@ def predictAccum(t: Union[
     return predictTrans_
 
 
-num_epochs = 200
-batch_size = 100
-hidden_size = 120
+def getRandFn(datasetType: DatasetType):
+    match datasetType:
+        case DatasetType.Random:
+            return lambda: (randomUniform, randomUniform)
+        case DatasetType.Sparse:
+            return lambda: sparseIO(sparseUniformConstOutT(8))
+        case DatasetType.Wave:
+            return lambda: (waveIO(waveArbitraryUniform), waveIO(waveArbitraryUniform))
+        case _:
+            raise Exception("Invalid dataset type")
+        
+
+num_epochs = 100
+batch_size = 200
+hidden_size = 200
+numExamples = 10
+t1 = 2 
+t2 = 2 
+ts = torch.arange(10)
 
 alpha_ = 1
 activation_ = f.relu
-learning_rate = 0.001
+learning_rate = 0.01
 
-def getDataset(loader, numEx_tr: int, numEx_vl: int, numEx_te: int):
-    return [loader(numEx_tr), cycle(loader(numEx_vl)), loader(numEx_te)]
+train_loader = getDataLoaderIO(getRandFn(DatasetType.Random), t1, t2, ts, numExamples, batch_size)
+test_loader = getDataLoaderIO(getRandFn(DatasetType.Random), t1, t2, ts, numExamples, batch_size)
 
 
-@curry
-def load_adder_task(randomExamplesIO, randomAdderIO, t1: float, t2: float, ts, numEx: int):
-    seq_length = len(ts)
-    xs, ys = randomExamplesIO(numEx, ts, lambda: randomAdderIO(t1, t2))
-    ts_broadcasted = ts.view(1, seq_length, 1).expand(numEx, seq_length, 1)
-    ys[ts_broadcasted < max(t1, t2)] = 0
-    ds = TensorDataset(xs, ys)
-    
-    dl = DataLoader(ds, batch_size=100, shuffle=True)
-    return dl
+visualizeOutput((y for batch in train_loader for y in batch[1]))
 
-load_sinadder = load_adder_task(createExamplesIO, randomSineExampleIO)
-load_sparse = lambda outT: load_adder_task(createExamplesIO, randomSparseIO(outT))
-def load_random(seq_length, t1, t2):
-    ts = torch.arange(0, seq_length)
-    return load_adder_task(createExamplesIO2, generate_random_lists, t1, t2, ts)
-
-loader = load_sparse(9)(5, 1, torch.arange(0, 10))
-# loader = load_sinadder(10, 7, torch.arange(0, 20))
-# loader = load_random(20, 10, 7)
-
-train_loader, _, test_loader = getDataset(loader, 1000, 1000, 1000)
+#%%
 
 # cleanData = map(lambda pair: (pair[0].permute(1, 0, 2), pair[1].permute(1, 0, 2))) # origin shape: [N, 1, 28, 28] -> resized: [28, N, 28]
 cleanData = map(lambda pair: zip(pair[0].permute(1, 0, 2), pair[1].permute(1, 0, 2))) # origin shape: [N, 1, 28, 28] -> resized: [28, N, 28]
@@ -105,7 +104,7 @@ epochs = [cleanData(train_loader) for _ in range(num_epochs)]
 
 W_rec_, W_in_, b_rec_, W_out_, b_out_ = initializeParametersIO(2, hidden_size, 1)
 alpha_ = 1
-optimizer = torch.optim.Adam((W_rec_, W_in_, b_rec_, W_out_, b_out_), lr=learning_rate) 
+optimizer = torch.optim.SGD((W_rec_, W_in_, b_rec_, W_out_, b_out_), lr=learning_rate) 
 a0 = torch.zeros(1, hidden_size, dtype=torch.float32)
 
 state0 = VanillaRnnStatePred( a0
@@ -159,7 +158,7 @@ def plotIO2(model, env):
         predicts = torch.tensor(list(predicts))
         # print(predicts)
         plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
-        plt.plot(torch.arange(0, 20), ys, torch.arange(0, 20), predicts.flatten().detach().numpy(), marker='o')
+        plt.plot(torch.arange(0, 10), ys, torch.arange(0, 10), predicts.flatten().detach().numpy(), marker='o')
         # plt.savefig('../../figs/mnist/loss_lr.png', format='png')
         plt.show()
 
