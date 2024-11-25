@@ -139,36 +139,31 @@ parameters__ = parameters_ - 0.01 * grad_
 
 
 
-rtrlParameters1 = parameters.clone().requires_grad_(True)
-rtrl_W_rec1, rtrl_W_out1 = torch.split(rtrlParameters1, [n*(n+n_in+1), n_out*(n+1)])
+rtrlParameters = parameters.clone().requires_grad_(True)
+rtrlPrevDynamic = prevDynamic.clone().requires_grad_(True)
+rtrlIM = influenceTensor.clone().requires_grad_(True)
+for _ in range(2):
+    rtrl_W_rec, rtrl_W_out = torch.split(rtrlParameters, [n*(n+n_in+1), n_out*(n+1)])
 
-rtrlDynamic1 = network(x_, prevDynamic, rtrl_W_rec1, 1)
-rtrlOutput1 = readout(rtrlDynamic1, rtrl_W_out1)
-rtrlLoss1 = F.mse_loss(rtrlOutput1, torch.tensor([1.0])) 
-rtrl_W_rec_Grad1, rtrlIM1 = rtrl.getRecurrentGradient(influenceTensor, prevDynamic, rtrlDynamic1, rtrlLoss1, rtrl_W_rec1)
-rtrl_W_out_Grad1 = jacobian(rtrlLoss1, rtrl_W_out1)
+    rtrlDynamic = network(x_, rtrlPrevDynamic, rtrl_W_rec, 1)
+    rtrlOutput = readout(rtrlDynamic, rtrl_W_out)
+    rtrlLoss = F.mse_loss(rtrlOutput, torch.tensor([1.0])) 
 
-rtrl_grad1 = torch.squeeze(torch.cat((rtrl_W_rec_Grad1, rtrl_W_out_Grad1), dim=1))
-rtrlParameters1 = rtrlParameters1 - 0.01 * rtrl_grad1
+    rtrl_W_rec_Grad, rtrlIM = rtrl.getRecurrentGradient(rtrlIM, rtrlPrevDynamic, rtrlDynamic, rtrlLoss, rtrl_W_rec)
+    rtrl_W_out_Grad = jacobian(rtrlLoss, rtrl_W_out)
 
-rtrlParameters1 = rtrlParameters1.detach().requires_grad_()
-rtrlDynamic1 = rtrlDynamic1.detach().requires_grad_()
-rtrlIM1 = rtrlIM1.detach().requires_grad_()
+    # Combine gradients and update parameters
+    rtrl_grad = torch.squeeze(torch.cat((rtrl_W_rec_Grad, rtrl_W_out_Grad), dim=1))
+    rtrlParameters = rtrlParameters - 0.01 * rtrl_grad
 
-rtrl_W_rec2, rtrl_W_out2 = torch.split(rtrlParameters1, [n*(n+n_in+1), n_out*(n+1)]) 
-
-rtrlDynamic2 = network(x_, rtrlDynamic1, rtrl_W_rec2, 1)
-rtrlOutput2 = readout(rtrlDynamic2, rtrl_W_out2)
-rtrlLoss2 = F.mse_loss(rtrlOutput2, torch.tensor([1.0]))
-rtrl_W_rec_Grad2, rtrlIM2 = rtrl.getRecurrentGradient(rtrlIM1, rtrlDynamic1, rtrlDynamic2, rtrlLoss2, rtrl_W_rec2)
-rtrl_W_out_Grad2 = jacobian(rtrlLoss2, rtrl_W_out2)
-
-rtrl_grad2 = torch.squeeze(torch.cat((rtrl_W_rec_Grad2, rtrl_W_out_Grad2), dim=1))
-rtrlParameters2 = rtrlParameters1 - 0.01 * rtrl_grad2
+    # Detach and require gradients for the next step
+    rtrlParameters = rtrlParameters.detach().requires_grad_()
+    rtrlPrevDynamic = rtrlDynamic.detach().requires_grad_()
+    rtrlIM = rtrlIM.detach().requires_grad_()
 
 
 
-assert torch.allclose(parameters__, rtrlParameters2)
+assert torch.allclose(parameters__, rtrlParameters)
 
 
 
