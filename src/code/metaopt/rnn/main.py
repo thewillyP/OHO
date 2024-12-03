@@ -10,23 +10,60 @@ from delayed_add_task import getDataLoaderIO, DatasetType, randomUniform, sparse
 from learning import *
 from torch.utils.data import TensorDataset
 from torch.utils.data import DataLoader
-from line_profiler import profile
 import wandb
 from matplotlib.ticker import MaxNLocator
 from pyrsistent import pdeque, PDeque
 
 torch.manual_seed(0)
 
-# wandb.init(
-#         # set the wandb project where this run will be logged
-#         project="my-test-project",
+wandb.init(
+        # set the wandb project where this run will be logged
+        project="my-test-project",
 
-#         # track hyperparameters and run metadata
-#         config={
-#             "tr_loss": 0.0,
-#             "te_loss": 0.0, 
-#         }
-#     )
+        # track hyperparameters and run metadata
+        config={
+            "tr_loss": 0.0,
+            "te_loss": 0.0, 
+        }
+    )
+
+
+def block_orthogonal_init(size, block_size, frequency=torch.pi/8, amplitude=(0.9, 0.999)):
+    W = torch.zeros((size, size))
+    num_blocks = size // block_size
+    for i in range(num_blocks):
+        theta = torch.distributions.uniform.Uniform(-frequency, frequency).sample((1,)) # Random small rotation
+        amplitude_val = torch.distributions.uniform.Uniform(*amplitude).sample((1,))     # Random amplitude scaling
+        rotation_matrix = amplitude_val * torch.tensor([[torch.cos(theta), -torch.sin(theta)],
+                                                        [torch.sin(theta), torch.cos(theta)]])
+        
+        start = i * block_size
+        W[start:start+2, start:start+2] = rotation_matrix  # Assign 2x2 rotation matrix to block
+    return W
+
+
+def initializeParameters(n_in: int, n_h: int, n_out: int
+                        ) -> tuple[torch.nn.Parameter, torch.nn.Parameter, torch.nn.Parameter, torch.nn.Parameter, torch.nn.Parameter]:
+    
+    W_in = torch.nn.init.normal_(torch.empty(n_h, n_in), 0, torch.sqrt(1 / torch.tensor(n_in)))
+    W_rec = torch.linalg.qr(torch.normal(0, 1, size=(n_h, n_h)))[0]
+    W_out = torch.nn.init.normal_(torch.empty(n_out, n_h), 0, torch.sqrt(1 / torch.tensor(n_h)))
+    
+    # W_in = torch.nn.init.normal_(torch.empty(n_h, n_in), 0, torch.sqrt(1 / torch.tensor(n_in)))
+    # W_rec = block_orthogonal_init(n_h, 2)
+    # W_out = torch.nn.init.normal_(torch.empty(n_out, n_h), 0, torch.sqrt(1 / torch.tensor(n_h)))
+    
+    b_rec = torch.nn.init.normal_(torch.empty(n_h), 0, torch.sqrt(1 / torch.tensor(n_h)))
+    b_out = torch.nn.init.normal_(torch.empty(n_out), 0, torch.sqrt(1 / torch.tensor(n_out)))
+
+    _W_in = torch.nn.Parameter(W_in)
+    _W_rec = torch.nn.Parameter(W_rec)
+    _W_out = torch.nn.Parameter(W_out)
+    _b_rec = torch.nn.Parameter(b_rec)
+    _b_out = torch.nn.Parameter(b_out)
+
+    return _W_rec, _W_in, _b_rec, _W_out, _b_out
+
 
 step = 0
 def parameterTrans(opt, lossFn):
@@ -37,13 +74,25 @@ def parameterTrans(opt, lossFn):
             loss = t.getLoss(env)
             loss.backward()
             W_rec, W_in, b_rec, W_out, b_out, _ = t.getParameter(env)
-            torch.nn.utils.clip_grad_norm_((W_rec, W_in, b_rec, W_out, b_out), 1)
+            # torch.nn.utils.clip_grad_norm_((W_rec, W_in, b_rec, W_out, b_out), 1)
             opt.step()  # will actuall physically spooky mutate the param so no update needed. 
             step += 1
             with torch.no_grad():
                 if step % 1 == 0:
-                    wandb.log({"tr_loss": loss.item()})
-                    wandb.log({"te_loss": lossFn(env)})
+                    # wandb.log({"tr_loss": loss.item()})
+                    # wandb.log({"te_loss": lossFn(env)})
+
+                    grads = {
+                        "tr_loss": loss.item(),
+                        "te_loss": lossFn(env),
+                        "grad_W_rec": W_rec.grad.norm().item() if W_rec.grad is not None else 0.0,
+                        "grad_W_in": W_in.grad.norm().item() if W_in.grad is not None else 0.0,
+                        "grad_b_rec": b_rec.grad.norm().item() if b_rec.grad is not None else 0.0,
+                        "grad_W_out": W_out.grad.norm().item() if W_out.grad is not None else 0.0,
+                        "grad_b_out": b_out.grad.norm().item() if b_out.grad is not None else 0.0,
+                    }
+                    wandb.log(grads)
+
                     print(f"Step {step}, Loss {loss.item()}")
             return env
         return parameterTrans__
@@ -76,33 +125,60 @@ def getRandFn(datasetType: DatasetType):
             raise Exception("Invalid dataset type")
         
 
-num_epochs = 100
-batch_size = 200
-hidden_size = 200
-numExamples = 10
-t1 = 2 
-t2 = 2 
+num_epochs = 10000
+batch_size = 100
+hidden_size = 100
+numExamples = 100
+t1 = 5
+t2 = 1
 ts = torch.arange(10)
 
 alpha_ = 1
 activation_ = f.relu
-learning_rate = 0.01
+learning_rate = 0.001
+
+
+# class ExperimentConfig:
+#     numEpochs: int
+#     batchSize_tr: int
+#     batchSize_te: int
+#     batchSize_vl: int
+#     numExamples: int
+#     t1: int
+#     t2: int
+#     ts: torch.Tensor
+#     hiddenSize: int
+#     alpha: float 
+#     activation: Callable[[torch.Tensor], torch.Tensor]
+#     learningRate: float
+#     datasetType: DatasetType
+
+"""
+1) create state object
+2) create prediction model
+3) create training loop
+
+where does training data come in?
+"""
+
+
 
 train_loader = getDataLoaderIO(getRandFn(DatasetType.Random), t1, t2, ts, numExamples, batch_size)
 test_loader = getDataLoaderIO(getRandFn(DatasetType.Random), t1, t2, ts, numExamples, batch_size)
+# visualizeOutput((y for batch in train_loader for y in batch[1]))
 
-
-visualizeOutput((y for batch in train_loader for y in batch[1]))
-
-#%%
 
 # cleanData = map(lambda pair: (pair[0].permute(1, 0, 2), pair[1].permute(1, 0, 2))) # origin shape: [N, 1, 28, 28] -> resized: [28, N, 28]
 cleanData = map(lambda pair: zip(pair[0].permute(1, 0, 2), pair[1].permute(1, 0, 2))) # origin shape: [N, 1, 28, 28] -> resized: [28, N, 28]
 epochs = [cleanData(train_loader) for _ in range(num_epochs)]
 
 
+W_rec_, W_in_, b_rec_, W_out_, b_out_ = initializeParameters(2, hidden_size, 1)
 
-W_rec_, W_in_, b_rec_, W_out_, b_out_ = initializeParametersIO(2, hidden_size, 1)
+
+
+
+
 alpha_ = 1
 optimizer = torch.optim.SGD((W_rec_, W_in_, b_rec_, W_out_, b_out_), lr=learning_rate) 
 a0 = torch.zeros(1, hidden_size, dtype=torch.float32)
@@ -111,6 +187,24 @@ state0 = VanillaRnnStatePred( a0
                         , 0
                         , (W_rec_, W_in_, b_rec_, W_out_, b_out_, alpha_)
                         , 0)
+
+# def inference(predictionFn, activationFn,)
+
+# def loss(activationFn, predictionFn, lossFn):
+#     predictionStep = liftA2(fmapSuffix, predictionFn, activationFn)
+#     lossStep = liftA2(fuse, predictionStep, lossFn)
+#     return lossStep
+
+# @dataclass(frozen=True)
+# class Learner:
+#     getData: Iterator[torch.Tensor]
+
+
+# def learn(t: ):
+#     data = getData() 
+#     state = initializeState()
+#     model = train(data, state)
+#     return model
 
 
 
@@ -145,7 +239,6 @@ stateTrained = trainEpochsFn(epochs, state0)
 print(time.time() - start)
 
 #%%
-RNG = np.random.RandomState(0)
 def plotIO2(model, env):
     with torch.no_grad():
         data, labels = next(iter(test_loader))

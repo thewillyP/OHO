@@ -28,9 +28,7 @@ TRAIN=0
 VALID=1
 TEST =2
 
-#torch.manual_seed(3)
 ifold=0
-RNG = np.random.RandomState(ifold)
 torch.random.manual_seed(ifold)
 
 """parsing and configuration"""
@@ -105,33 +103,28 @@ def load_mnist(args):
 def getDataset(loader, numEx_tr: int, numEx_vl: int, numEx_te: int):
     return [loader(numEx_tr), cycle(loader(numEx_vl)), loader(numEx_te)]
 
-@curry
-def load_adder_task(randomExamplesIO, randomAdderIO, t1: float, t2: float, ts, args, numEx: int):
-    seq_length = len(ts)
-    xs, ys = randomExamplesIO(numEx, ts, lambda: randomAdderIO(t1, t2))
-    ts_broadcasted = ts.view(1, seq_length, 1).expand(numEx, seq_length, 1)
-    ys[ts_broadcasted < max(t1, t2)] = 0
-    ds = TensorDataset(xs, ys)
-    dl = DataLoader(ds, batch_size=args.batch_size, shuffle=True)
-    return dl
-
-load_sinadder = load_adder_task(createExamplesIO, randomSineExampleIO)
-load_sparse = lambda outT: load_adder_task(createExamplesIO, randomSparseIO(outT))
-def load_random(seq_length, t1, t2):
-    ts = torch.arange(0, seq_length)
-    return load_adder_task(createExamplesIO2, generate_random_lists, t1, t2, ts)
 
 def main(filename, args, ifold=0, trial=0, quotient=None, device='cuda', is_cuda=1):  # iscuda not even used
 
-    if args.task == 'sin':
-        loader = load_sinadder(args.t1, args.t2, torch.arange(0, args.seq), args)
-    elif args.task == 'sparse':
-        loader = load_sparse(args.outT)(args.t1, args.t2, torch.arange(0, args.seq), args)
-    else:
-        loader = load_random(args.seq, args.t1, args.t2)(args)
-    dataset = getDataset(loader, args.numTr, args.numVl, args.numTe) 
 
-    # dataset = getDataset(load_sinadder(1, 1, torch.arange(0, 20), args), 1000, 1000, 200) 
+    def getRandFn(datasetType: DatasetType):
+        match datasetType:
+            case DatasetType.Random:
+                return lambda: (randomUniform, randomUniform)
+            case DatasetType.Sparse:
+                return lambda: sparseIO(sparseUniformConstOutT(args.outT))
+            case DatasetType.Wave:
+                return lambda: (waveIO(waveArbitraryUniform), waveIO(waveArbitraryUniform))
+            case _:
+                raise Exception("Invalid dataset type")
+    
+    t1, t2 = args.t1, args.t2
+    ts = torch.arange(0, args.seq)
+
+    train_loader = getDataLoaderIO(getRandFn(args.task), t1, t2, ts, args.numTr, args.batch_size)
+    valid_loader = getDataLoaderIO(getRandFn(args.task), t1, t2, ts, args.numVl, args.batch_size_vl)
+    test_loader = getDataLoaderIO(getRandFn(args.task), t1, t2, ts, args.numTe, args.batch_size)
+    dataset = [train_loader, cycle_efficient(valid_loader), test_loader]
 
     ## Initialize Model and Optimizer
     # hdims = [args.xdim] + [args.hdim]*args.num_hlayers + [args.ydim]
@@ -232,142 +225,161 @@ def train(args, dataset, model, optimizer, saveF=0, is_cuda=1):
 
     gradient_list = []
 
-    try:
         
-        optimizer = update_optimizer_hyperparams(args, model, optimizer)
+    optimizer = update_optimizer_hyperparams(args, model, optimizer)
+    # scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.999)
 
-        start_time0 = time.time()
-        for epoch in range(args.num_epoch+1):
-            # if epoch % 1 == 0:
-            #     te_losses, te_accs = [], []
-            #     for batch_idx, (data, target) in enumerate(dataset[TEST]):  # data = (batch, channel=1, 28, 28)
-            #         data, target = to_torch_variable(data, target, is_cuda, floatTensorF=1)
-            #         _, loss, accuracy, _, _, _ = feval(data, target, model, optimizer, mode='eval', is_cuda=is_cuda)
-            #         te_losses.append(loss)
-            #         te_accs.append(accuracy)
-            #     te_epoch.append(epoch)
-            #     te_loss_list.append(np.mean(te_losses))
-            #     te_acc_list.append(np.mean(te_accs))
+    start_time0 = time.time()
+    for epoch in range(args.num_epoch+1):
+        # if epoch % 1 == 0:
+        #     te_losses, te_accs = [], []
+        #     for batch_idx, (data, target) in enumerate(dataset[TEST]):  # data = (batch, channel=1, 28, 28)
+        #         data, target = to_torch_variable(data, target, is_cuda, floatTensorF=1)
+        #         _, loss, accuracy, _, _, _ = feval(data, target, model, optimizer, mode='eval', is_cuda=is_cuda)
+        #         te_losses.append(loss)
+        #         te_accs.append(accuracy)
+        #     te_epoch.append(epoch)
+        #     te_loss_list.append(np.mean(te_losses))
+        #     te_acc_list.append(np.mean(te_accs))
+    
+            # print('Valid Epoch: %d, Loss %f Acc %f' % 
+            #     (epoch, np.mean(te_losses), np.mean(te_accs)))
         
-                # print('Valid Epoch: %d, Loss %f Acc %f' % 
-                #     (epoch, np.mean(te_losses), np.mean(te_accs)))
-                
-
-            grad_list = []
-            start_time = time.time()
-            for batch_idx, (data, target) in enumerate(dataset[TRAIN]):
-                data, target = to_torch_variable(data, target, is_cuda)
-                opt_type = args.opt_type
-                if epoch > args.num_epoch * 0.1 and args.opt_type == 'sgld':
-                    opt_type = args.opt_type
-                else:
-                    opt_type = 'sgd'
-                    model, loss, accuracy, output, noise, grad_vec = feval(data, target, model, optimizer, \
-                                        is_cuda=is_cuda, mode='meta-train', opt_type=opt_type)
-                    tr_epoch.append(counter)
-                    tr_loss_list.append(loss)
-                    tr_acc_list.append(accuracy)
-                    grad_list.append(grad_vec)
-                    gg = norm(flatten_array(get_grads(model.parameters(), is_cuda)).data)
-                    wandb.log({
-                        "tr_loss": loss,
-                        "grad_norm": gg,
-                        "param_norm": norm(flatten_array(model.parameters()))
-                    })
-
-                if args.reset_freq > 0 and counter % args.reset_freq == 0:
-                    model.reset_jacob() 
-
-                """ meta update only uses most recent gradient on the update freq. feval resets gradient everytime its called. so meta_update will not use the sum of gradients """
-                if args.oho == 1 and counter % args.update_freq == 0 and args.mlr != 0.0 and counter >= 5000:
-                    data_vl, target_vl = next(dataset[VALID])
-                    data_vl, target_vl = to_torch_variable(data_vl, target_vl, is_cuda)
-                    model, loss_vl, optimizer = meta_update(args, data_vl, target_vl, data, target, model, optimizer, noise, is_cuda=is_cuda)
-                    vl_epoch.append(counter)
-                    vl_loss_list.append(loss_vl.item())
-                
-                
-                te_losses, te_accs = [], []
-                for batch_idx, (data, target) in enumerate(dataset[TEST]):  # data = (batch, channel=1, 28, 28)
-                    data, target = to_torch_variable(data, target, is_cuda, floatTensorF=1)
-                    _, loss, accuracy, _, _, _ = feval(data, target, model, optimizer, mode='eval', is_cuda=is_cuda)
-                    te_losses.append(loss)
-                    te_accs.append(accuracy)
-                te_epoch.append(epoch)
-                te_loss_list.append(np.mean(te_losses))
-                te_acc_list.append(np.mean(te_accs))
-
-                wandb.log({
-                    "vl_loss": np.mean(vl_loss_list[-1]) if len(vl_loss_list) > 0 else 0.0,
-                    "te_loss": np.mean(te_loss_list[-1]) if len(te_loss_list) > 0 else 0.0,
-                    "eta": model.eta,
-                    "l2": model.lambda_l2,
-                    "dFdlr": model.dFdlr_norm,
-                    "dFdl2": model.dFdl2_norm,
-                    "grad_norm_vl": model.grad_norm_vl,
-                    "gang": model.grad_angle,
-                })
+        
+        te_losses, te_accs = [], []
+        for batch_idx, (data, target) in enumerate(dataset[TEST]):  # data = (batch, channel=1, 28, 28)
+            data, target = to_torch_variable(data, target, is_cuda, floatTensorF=1)
+            _, loss, accuracy, _, _, _ = feval(data, target, model, optimizer, mode='eval', is_cuda=is_cuda)
+            te_losses.append(loss)
+            te_accs.append(accuracy)
+        te_epoch.append(epoch)
+        te_loss_list.append(np.mean(te_losses))
+        te_acc_list.append(np.mean(te_accs))
 
 
-                counter += 1  
-            grad_list = np.asarray(grad_list)   
-            corr_mean, corr_std = compute_correlation(grad_list, normF=1)
-            tr_corr_mean_list.append(corr_mean)
-            tr_corr_std_list.append(corr_std)
-            grad_list = np.asarray(grad_list)
+        # wandb.log({
+        #     "te_loss": np.mean(te_loss_list[-1]) if len(te_loss_list) > 0 else 0.0,
+        #     })
 
-            wandb.log({
-                "grad_corr_mean": corr_mean,
-                "grad_corr_std": corr_std
-            })
+        grad_list = []
+        start_time = time.time()
+        for batch_idx, (data, target) in enumerate(dataset[TRAIN]):
 
-            end_time = time.time()
-            # if epoch == 0: print('Single epoch timing %f' % ((end_time-start_time) / 60))
-
-            # if epoch % args.checkpoint_freq == 0:
-            #     os.makedirs(args.fdir+ '/checkpoint/', exist_ok=True)
-            #     save(model, args.fdir+ '/checkpoint/epoch%d' % epoch) 
-
-
-            fprint = 'Train Epoch: %d, Tr Loss %f Vl loss %f Acc %f Eta %s, L2 %s, |dFdlr| %.2f |dFdl2| %.2f |G| %.4f |G_vl| %.4f Gang %.3f |W| %.2f, Grad Corr %f %f'
-            if np.isnan(tr_loss_list[-1]):
-                    print("ERROR: NaNs in loss")
-                    break
-            print(fprint % (epoch, np.mean(tr_loss_list[-100:]), \
-                            np.mean(vl_loss_list[-100:]), \
-                            np.mean(tr_acc_list[-100:]), \
-                            str(model.eta), str(model.lambda_l2), \
-                            model.dFdlr_norm, model.dFdl2_norm,\
-                            model.grad_norm,  model.grad_norm_vl, \
-                            model.grad_angle, model.param_norm, 0, 0))
             
 
-            # "te_loss": 0.0,
-            # "eta": args.lr,
-            # "l2": args.lambda_l2,
-            # "dFdlr": 0.0,
-            # "dFdl2": 0.0,
-            # "grad_norm": 0.0,
-            # "grad_norm_vl": 0.0,
-            # "gang": 0.0,
-            # "param_norm": 0.0,
-            # "grad_corr": 0.0,
-            # "grad_corr_vl": 0.0
 
-            Wn_list.append(model.param_norm)
-            dFdlr_list.append(model.dFdlr_norm)
-            dFdl2_list.append(model.dFdl2_norm)
-            if args.model_type == 'amlp':
-                lr_list.append(model.eta.copy())
-                l2_list.append(model.lambda_l2.copy())
+            data, target = to_torch_variable(data, target, is_cuda)
+            opt_type = args.opt_type
+            if epoch > args.num_epoch * 0.1 and args.opt_type == 'sgld':
+                opt_type = args.opt_type
             else:
-                lr_list.append(model.eta)
-                l2_list.append(model.lambda_l2)
-            gang_list.append(model.grad_angle)
+                opt_type = 'sgd'
+                model, loss, accuracy, output, noise, grad_vec = feval(data, target, model, optimizer, \
+                                    is_cuda=is_cuda, mode='meta-train', opt_type=opt_type)
+                tr_epoch.append(counter)
+                tr_loss_list.append(loss)
+                tr_acc_list.append(accuracy)
+                grad_list.append(grad_vec)
+                gg = norm(flatten_array(get_grads(model.parameters(), is_cuda)).data)
+                # wandb.log({
+                #     "tr_loss": loss,
+                #     "grad_norm": gg,
+                #     "param_norm": norm(flatten_array(model.parameters()))
+                # })
 
-            gradient_list.append(model.grad_norm)
-    except:
-        pass
+            if args.reset_freq > 0 and counter % args.reset_freq == 0:
+                model.reset_jacob() 
+
+            hvlr, hvl2 = 0, 0
+            """ meta update only uses most recent gradient on the update freq. feval resets gradient everytime its called. so meta_update will not use the sum of gradients """
+            if args.oho == 1 and counter % args.update_freq == 0 and args.mlr != 0.0 and counter >= 0:
+                data_vl, target_vl = next(dataset[VALID])
+                data_vl, target_vl = to_torch_variable(data_vl, target_vl, is_cuda)
+                model, loss_vl, optimizer, hvlr, hvl2 = meta_update(args, data_vl, target_vl, data, target, model, optimizer, noise, is_cuda=is_cuda)
+                hvlr, hvl2 = norm(hvlr), norm(hvl2)
+                vl_epoch.append(counter)
+                vl_loss_list.append(loss_vl.item())
+            
+            
+            
+
+            wandb.log({
+                "tr_loss": loss,
+                "grad_norm": gg,
+                "param_norm": norm(flatten_array(model.parameters())),
+                "vl_loss": np.mean(vl_loss_list[-1]) if len(vl_loss_list) > 0 else 0.0,
+                "te_loss": np.mean(te_loss_list[-1]) if len(te_loss_list) > 0 else 0.0,
+                "eta": optimizer.param_groups[0]['lr'],
+                "l2": optimizer.param_groups[0]['weight_decay'],
+                "dFdlr": model.dFdlr_norm,
+                "dFdl2": model.dFdl2_norm,
+                "grad_norm_vl": model.grad_norm_vl,
+                "gang": model.grad_angle,
+                "Hv_lr": hvlr,
+                "Hv_l2": hvl2,
+            })
+
+
+            counter += 1  
+        grad_list = np.asarray(grad_list)   
+        corr_mean, corr_std = compute_correlation(grad_list, normF=1)
+        tr_corr_mean_list.append(corr_mean)
+        tr_corr_std_list.append(corr_std)
+        grad_list = np.asarray(grad_list)
+
+        wandb.log({
+            "grad_corr_mean": corr_mean,
+            "grad_corr_std": corr_std
+        })
+
+        end_time = time.time()
+        # if epoch == 0: print('Single epoch timing %f' % ((end_time-start_time) / 60))
+
+        # if epoch % args.checkpoint_freq == 0:
+        #     os.makedirs(args.fdir+ '/checkpoint/', exist_ok=True)
+        #     save(model, args.fdir+ '/checkpoint/epoch%d' % epoch) 
+
+        # scheduler.step()
+
+
+        fprint = 'Train Epoch: %d, Tr Loss %f Vl loss %f Acc %f Eta %s, L2 %s, |dFdlr| %.2f |dFdl2| %.2f |G| %.4f |G_vl| %.4f Gang %.3f |W| %.2f, Grad Corr %f %f'
+        if np.isnan(tr_loss_list[-1]):
+                print("ERROR: NaNs in loss")
+                break
+        print(fprint % (epoch, np.mean(tr_loss_list[-100:]), \
+                        np.mean(vl_loss_list[-100:]), \
+                        np.mean(tr_acc_list[-100:]), \
+                        str(model.eta), str(model.lambda_l2), \
+                        model.dFdlr_norm, model.dFdl2_norm,\
+                        model.grad_norm,  model.grad_norm_vl, \
+                        model.grad_angle, model.param_norm, 0, 0))
+        
+
+        # "te_loss": 0.0,
+        # "eta": args.lr,
+        # "l2": args.lambda_l2,
+        # "dFdlr": 0.0,
+        # "dFdl2": 0.0,
+        # "grad_norm": 0.0,
+        # "grad_norm_vl": 0.0,
+        # "gang": 0.0,
+        # "param_norm": 0.0,
+        # "grad_corr": 0.0,
+        # "grad_corr_vl": 0.0
+
+        Wn_list.append(model.param_norm)
+        dFdlr_list.append(model.dFdlr_norm)
+        dFdl2_list.append(model.dFdl2_norm)
+        if args.model_type == 'amlp':
+            lr_list.append(model.eta.copy())
+            l2_list.append(model.lambda_l2.copy())
+        else:
+            lr_list.append(model.eta)
+            l2_list.append(model.lambda_l2)
+        gang_list.append(model.grad_angle)
+
+        gradient_list.append(model.grad_norm)
+
 
     # print(gradient_list)
     # print(len(tr_loss_list), len(vl_loss_list), len(te_loss_list))
@@ -416,7 +428,7 @@ def feval(data, target, model, optimizer, mode='eval', is_cuda=0, opt_type='sgd'
     noise = None
     if 'train' in mode:
         loss.backward()  # check how getting bacthed, try gigureout out how gradient modificat
-        # torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
 
         for i,param in enumerate(model.parameters()):
             if opt_type == 'sgld':
@@ -461,10 +473,7 @@ def meta_update(args, data_vl, target_vl, data_tr, target_tr, model, optimizer, 
 
     
 
-    wandb.log({
-        "Hv_lr": norm(Hv_lr),
-        "Hv_l2": norm(Hv_l2),
-    })
+  
 
     model, loss_valid, grad_valid = get_grad_valid(model, data_vl, target_vl, is_cuda)
     #model, loss_valid, grad_valid = get_grad_valid(model, data_tr, target_tr, is_cuda)
@@ -480,15 +489,15 @@ def meta_update(args, data_vl, target_vl, data_tr, target_tr, model, optimizer, 
 
     #Update hyper-parameters   
     model.update_dFdlr(Hv_lr, param, grad, is_cuda, noise=noise)
-    # model.update_eta(args.mlr, val_grad=grad_valid)
+    model.update_eta(args.mlr, val_grad=grad_valid)
     param = flatten_array_w_0bias(model.parameters()).data
     model.update_dFdlambda_l2(Hv_l2, param, grad, is_cuda)
-    # model.update_lambda(args.mlr*0.01, val_grad=grad_valid)
+    model.update_lambda(args.mlr*0.01, val_grad=grad_valid)
 
     #Update optimizer with new eta
     optimizer = update_optimizer_hyperparams(args, model, optimizer)
 
-    return model, loss_valid, optimizer
+    return model, loss_valid, optimizer, Hv_lr, Hv_l2
 
 
 def get_grad_valid(model, data, target, is_cuda):
@@ -521,18 +530,18 @@ if __name__ == '__main__':
     args = Arg()
     args.is_cuda = 0
     args.mlr = 0.00001
-    args.lr = 0.01
+    args.lr = 0.1
     args.lambda_l2 = 0
     args.opt_type = "sgd"
     args.update_freq = 1
     args.save = 1
     args.model_type = 'bptt'
-    args.num_epoch = 1000
+    args.num_epoch = 500
     args.save_dir = "results"
-    args.batch_size = 200
+    args.batch_size = 100
     args.reset_freq = 0 
-    args.batch_size_vl = 1
-    args.task = 'random'  # oho can't solve random case
+    args.batch_size_vl = 100
+    args.task = DatasetType.Random
     args.t1 = 5
     args.t2 = 1
     args.outT = 9
@@ -545,7 +554,7 @@ if __name__ == '__main__':
     # start a new wandb run to track this script
     wandb.init(
         # set the wandb project where this run will be logged
-        project="my-awesome-project",
+        project="test1",
 
         # track hyperparameters and run metadata
         config={
@@ -588,7 +597,7 @@ if __name__ == '__main__':
 
 #         def randomSineWaveIO():
 #             amplitude = RNG.uniform(0, 1)  # Random amplitude between 0.5 and 2
-#             frequency = RNG.uniform(0, 100)   # Random frequency between 1 and 10 Hz
+#             frequency = RNG.uniform(0, 100)   # Random pip frequency between 1 and 10 Hz
 #             phase_shift = RNG.uniform(0, 2 * np.pi)
 #             bias = RNG.uniform(-1, 1)
 #             sine_wave = lambda t: amplitude * torch.sin(frequency * t + phase_shift) + bias
@@ -673,3 +682,5 @@ if __name__ == '__main__':
 #     plotIO3(model)
 
 # # %%
+
+# %%

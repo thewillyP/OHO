@@ -17,6 +17,7 @@
     ],
     "python.analysis.extraPaths": [
         "./src/code/metaopt/mnist",
-        "./src/code/metaopt/rnn"
+        "./src/code/metaopt/rnn",
+        "./src/code/metaopt"
     ],
 }

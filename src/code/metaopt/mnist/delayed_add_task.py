@@ -1,197 +1,120 @@
-
-#%% 
-import numpy as np
 from typing import Callable
 from toolz import curry, compose
 import matplotlib.pyplot as plt
-from myfunc import *
 import torch
 from torch.utils.data import TensorDataset, DataLoader
+from typing import TypeVar, Callable, Generic, Generator, Iterator
+from dataclasses import dataclass
+from enum import Enum
+
 
 @curry
 def createUnitSignal(startTime: float, duration: float) -> Callable[[float], float]:
-    def test(t):
+    def unit(t):
         return ((0 <= t - startTime) & (t - startTime <= duration)) 
-    return test
-    # return lambda t: 1.0 * (0 <= t - startTime <= duration) 
+    return unit
 
 @curry 
 def createSparseSignal(amplitude: float, t0: float, duration: float):
     return compose(lambda x: amplitude*x, createUnitSignal(t0, duration))
 
 
-@curry
-def createDelayedAdder(  t1: float
-                        , t2: float
-                        , x1: Callable[[float], float]
-                        , x2: Callable[[float], float]) -> Callable[[float], float]:
-    return lambda t: x1(t - t1) + x2(t - t2)
+def sparseSignal( startOffset: float
+                , a: float
+                , dur: float
+                , outT: float):
+    return createSparseSignal(a, outT - startOffset, dur)
 
 
-def createAddMemoryTask(  t1: float
-                        , t2: float
-                        , a: float
-                        , b: float
-                        , t1_dur: float
-                        , t2_dur: float
-                        , outT: float):
-    x1 = createSparseSignal(a, outT - t1, t1_dur)
-    x2 = createSparseSignal(b, outT - t2, t2_dur)
-    return x1, x2, createDelayedAdder(t1, t2, x1, x2)
+def sinWave(amplitude: float, frequency: float, phase_shift: float, bias: float):
+    return lambda t: amplitude * torch.sin(frequency * t + phase_shift) + bias
 
 
-@curry
-def createExamples(ts, x1, x2, y):
-    # x1s = tensormap(x1, ts)
-    # x2s = tensormap(x2, ts) 
-    # ys = tensormap(y, ts)
-    x1s = x1(ts)
-    x2s = x2(ts)
-    ys = y(ts)
-    return torch.stack([x1s, x2s], dim=1), ys
-
-def createExamplesIO(numExamples, ts, randomFnsIO):
-    X_batch = []
-    Y_batch = []
-    
-    for _ in range(numExamples):
-        x1, x2, y = randomFnsIO()
-        X, Y = createExamples(ts, x1, x2, y)
-        X_batch.append(X)
-        Y_batch.append(Y)
-    
-    X_batch = torch.stack(X_batch, dim=0)
-    Y_batch = torch.stack(Y_batch, dim=0).unsqueeze(-1)
-    
-    return X_batch, Y_batch
+@dataclass(frozen=True)
+class WaveInitIO:
+    initAmplitudeIO: Callable[[], float]
+    initFrequencyIO: Callable[[], float]
+    initPhaseShiftIO: Callable[[], float]
+    initBiasIO: Callable[[], float]
+@dataclass(frozen=True)
+class SparseInitIO:
+    initAmplitudeIO: Callable[[], float]
+    initT0IO: Callable[[float], float]
+    initDurationIO: Callable[[], float]
+    outTIO : Callable[[], float]
 
 
-def createExamplesIO2(numExamples, ts, createExamplesIO):
-    X_batch = []
-    Y_batch = []
-    
-    for _ in range(numExamples):
-        fn = createExamplesIO()
-        X, Y = fn(ts)
-        X_batch.append(X)
-        Y_batch.append(Y)
-    
-    X_batch = torch.stack(X_batch, dim=0)
-    Y_batch = torch.stack(Y_batch, dim=0).unsqueeze(-1)
-    
-    return X_batch, Y_batch
+def waveIO(waveInitIO: WaveInitIO):
+    amplitude = waveInitIO.initAmplitudeIO()
+    frequency = waveInitIO.initFrequencyIO()
+    phase_shift = waveInitIO.initPhaseShiftIO()
+    bias = waveInitIO.initBiasIO()
+    return lambda t, _: sinWave(amplitude, frequency, phase_shift, bias)(t)
 
 
-def randomSineWaveIO():
-        amplitude = np.random.uniform(0, 1)  # Random amplitude between 0.5 and 2
-        frequency = np.random.uniform(0, 100)   # Random frequency between 1 and 10 Hz
-        phase_shift = np.random.uniform(0, 2 * np.pi)
-        bias = np.random.uniform(-1, 1)
-        sine_wave = lambda t: amplitude * np.sin(frequency * t + phase_shift) + bias
-        return sine_wave
+def sparseIO(sparseInitIO: SparseInitIO):
+    outT = sparseInitIO.outTIO()
+    def sparseFn(ts, t0):
+        t0 = sparseInitIO.initT0IO(t0)
+        amplitude = sparseInitIO.initAmplitudeIO()
+        duration = sparseInitIO.initDurationIO()
+        return sparseSignal(t0, amplitude, duration, outT)(ts)
+    return sparseFn, sparseFn
 
-def randomSineExampleIO(t1: float, t2: float):
-    x1 = randomSineWaveIO()
-    x2 = randomSineWaveIO()
-    y = createDelayedAdder(t1, t2, x1, x2)
+
+
+def createDelayAddExample(t1, t2, ts, getRandFn):
+    randFn1, randFn2 = getRandFn()
+    x1 = randFn1(ts, t1)
+    x2 = randFn2(ts, t2)
+    y = torch.roll(x1, shifts=t1, dims=0) + torch.roll(x2, shifts=t2, dims=0)  # giving up on mathematically elegant y(t) = x(t - t1) + x(t - t2) bc computer can't support arbitrary precision. From now use integers only
+    mask = ts >= max(t1, t2) 
+    y = y * mask 
     return x1, x2, y
 
-@curry
-def randomSparseIO(outT: float, t1: float, t2: float):
-        a_ = np.random.uniform(-1, 1)
-        b_ = np.random.uniform(-1, 1)
-        t1d = 1 #RNG.uniform(0, 2)
-        t2d = 1 #RNG.uniform(0, 2)
-        x1, x2, y = createAddMemoryTask(t1, t2, a_, b_, t1d, t2d, outT)
-        return x1, x2, y
 
-@curry
-def generate_random_lists(t1, t2, ts):
-    T = len(ts)
-    x1 = np.random.randn(T) 
-    x2 = np.random.randn(T) 
-    x1 = torch.from_numpy(x1).to(torch.float32)
-    x2 = torch.from_numpy(x2).to(torch.float32)
-    y = torch.zeros(T).to(torch.float32)
-    # Calculate y(t) = x1(t - t1) + x2(t - t2)
-    for t in ts:
-        if t >= max(t1, t2):
-            y[t] = x1[t - t1] + x2[t - t2]
-    
-    return torch.stack([x1, x2], dim=1), y
-
-
-#%%
-
-
-# if __name__ == "__main__":
-
-#     np.random.seed(0)  #! Global state change
-#     t1: float = 6
-#     t2: float = 4
-#     ts = torch.linspace(0, 15, 1000)
-#     batch = 2
-
-
-    
-
-#     genRndomSineExampleIO = lambda: randomSineExampleIO(t1, t2)
+def createExamples(n, randomMonad):
+    XS1, XS2, YS = torch.vmap(lambda _: randomMonad(), randomness='different')(torch.arange(n))
+    combined_XS = torch.stack((XS1, XS2), dim=-1)
+    return combined_XS, YS.unsqueeze(-1)
 
 
 
-#     xs, ys = createExamplesIO(3, ts, genRndomSineExampleIO)
-#     dataset = TensorDataset(xs, ys)
-#     dataloader = DataLoader(dataset, batch_size=batch, shuffle=True)
+def visualizeOutput(YS):
+    from matplotlib.ticker import MaxNLocator
 
-#     x1, x2, y = genRndomSineExampleIO()
-#     plt.plot(ts, listmap(x1, ts), ts, listmap(x2, ts), ts, listmap(y, ts))
-
+    for ys in YS:  # Loop over each example
+        plt.plot(range(ys.size(0)), ys, 'o-')
 
 
+    plt.title('Output Time Series for All Examples')
+    plt.xlabel('Time')
+    plt.ylabel('Output Value')
+    plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
+    plt.show()
 
 
+class DatasetType(Enum):
+    Random = 1
+    Sparse = 2
+    Wave = 3
 
 
+sparseUniformConstOutT = lambda outT: SparseInitIO(lambda: torch.rand(1) - 0.5, lambda x: x, lambda: 1, lambda: outT)
+sparseUniform = SparseInitIO(lambda: torch.rand(1) - 0.5, lambda x: x, lambda: 1, lambda: torch.randint(5, 10, (1,)))
+waveArbitraryUniform = WaveInitIO(lambda: torch.rand(1), lambda: torch.rand(1)*100, lambda: torch.rand(1)*2*torch.pi, lambda: torch.rand(1)*2 - 1)
+randomUniform = lambda ts, _: torch.rand(len(ts)) - 0.5
+randomNormal = lambda ts, _: torch.randn(len(ts)) - 0.5
+# later in the future I can create a config file instead of having to manually change this code everytime
 
-# a: float = 3
-# b: float = -1
-# t1_dur: float = 2
-# t2_dur: float = 1
-# outT: float = 10
-# st, et = min(outT - t1, outT - t2), outT+1  # +1 to include outT in range()
-
-# x1, x2, y = createAddMemoryTask(t1, t2, a, b, t1_dur, t2_dur, outT)
-
-
-# x1, x2, y = createAddMemoryTask(t1, t2, a, b, t1_dur, t2_dur, outT)
-# ts = np.linspace(-10, 15, 1000)
-# x1s = listmap(x1, ts)
-# x2s = listmap(x2, ts) 
-# ys = listmap(y, ts)
-# plt.plot(ts, x1s, ts, x2s, ts, ys)
-# plt.show()
-
-
-# """
-#     y(t) = x(t - t_1) + x(t - t_2)           (1)
-# """
-# # :: time (<No prev state bc stateless>, Action) -> (x1, x2, y) (State)
 # @curry
-# def createAddMemoryTask(  t1: float
-#                         , t2: float
-#                         , a: float
-#                         , b: float
-#                         , t1_dur: float
-#                         , t2_dur: float
-#                         , outT: float) -> Callable[[float], tuple[float, float, float]]:
-#     x1 = compose(lambda x: a*x, createUnitSignal(outT - t1, t1_dur))
-#     x2 = compose(lambda x: b*x, createUnitSignal(outT - t2, t2_dur))
-#     y = lambda t: x1(t - t1) + x2(t - t2)
-#     return lambda t: (x1(t), x2(t), y(t))
+def getDataLoaderIO(randFn, t1: int, t2: int, ts: torch.Tensor, numEx: int, batchSize: int):
+    gen = lambda: createDelayAddExample(t1, t2, ts, randFn)
+    XS, YS = createExamples(numEx, gen)
+    ds = TensorDataset(XS, YS)
+    dl = DataLoader(ds, batch_size=batchSize, shuffle=True, drop_last=True)
+    return dl
 
 
 
 
-
-
-# %%

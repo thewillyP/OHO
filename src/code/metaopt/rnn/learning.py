@@ -141,8 +141,6 @@ def lossTrans(criterion: Callable):
     return lossTrans_
 
 
-
-
 def pyTorchRnn(t: Union[HasParameter[MODEL, PARAM]]) -> Callable[[torch.Tensor, MODEL], tuple[MODEL, torch.Tensor]]:
     def predictTrans_(x: torch.Tensor, env: MODEL) -> tuple[MODEL, torch.Tensor]:
         model = t.getParameter(env)

@@ -103,7 +103,12 @@ class BPTTRNN(nn.Module):
         # self.fc = linear_(self.W_out_,self.b_out_)
         # self.initH = lambda x: torch.zeros(x.size(0), n_h).to('cpu' if is_cuda==0 else 'gpu') 
         
-        self.rnn = nn.RNN(n_in, n_h, 1, batch_first=True, nonlinearity='relu')  # sampels weights from uniform which is pretty big
+        # self.rnn = nn.LSTM(n_in, n_h, 1, batch_first=True)  # sampels weights from uniform which is pretty big
+        # self.fc = nn.Linear(n_h, n_out)
+        # self.initH = lambda x: torch.zeros(1, x.size(0), n_h).to('cpu' if is_cuda==0 else 'gpu') 
+        # self._initialize_weights()
+
+        self.rnn = nn.RNN(n_in, n_h, 1, batch_first=True, nonlinearity='relu') # sampels weights from uniform which is pretty big
         self.fc = nn.Linear(n_h, n_out)
         self.initH = lambda x: torch.zeros(1, x.size(0), n_h).to('cpu' if is_cuda==0 else 'gpu') 
         self._initialize_weights()
@@ -145,12 +150,13 @@ class BPTTRNN(nn.Module):
     def _initialize_weights(self):
         for name, param in self.rnn.named_parameters():
             if 'weight' in name:
-                torch.nn.init.xavier_uniform_(param)
+                # torch.nn.init.orthogonal_
+                torch.nn.init.orthogonal_(param)
             elif 'bias' in name:
                 # torch.nn.init.uniform_(param, a=0.01, b=0.1)
                 torch.nn.init.zeros_(param)  # It’s often a good practice to zero the biases
         
-        torch.nn.init.xavier_uniform_(self.fc.weight)
+        torch.nn.init.orthogonal_(self.fc.weight)
         torch.nn.init.zeros_(self.fc.bias)
 
     def reset_jacob(self, is_cuda=1):
@@ -187,6 +193,12 @@ class BPTTRNN(nn.Module):
         x, _ = self.rnn(x, h0)
         x = self.fc(x)
         return x
+
+        # h_0 = torch.zeros(1, 1000, 200)
+        # c_0 = torch.zeros(1, 1000, 200)
+        # x, _ = self.rnn(x)
+        # x = self.fc(x)
+        # return x
 
 
         # if logsoftmaxF:

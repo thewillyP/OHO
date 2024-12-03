@@ -154,16 +154,71 @@ for _ in range(2):
 
     # Combine gradients and update parameters
     rtrl_grad = torch.squeeze(torch.cat((rtrl_W_rec_Grad, rtrl_W_out_Grad), dim=1))
-    rtrlParameters = rtrlParameters - 0.01 * rtrl_grad
+    # rtrlParameters = rtrlParameters - 0.01 * rtrl_grad
 
     # Detach and require gradients for the next step
-    rtrlParameters = rtrlParameters.detach().requires_grad_()
+    # rtrlParameters = rtrlParameters.detach().requires_grad_()
     rtrlPrevDynamic = rtrlDynamic.detach().requires_grad_()
     rtrlIM = rtrlIM.detach().requires_grad_()
 
 
 
-assert torch.allclose(parameters__, rtrlParameters)
+# assert torch.allclose(parameters__, rtrlParameters)
+
+W_rec = torch.cat((torch.eye(2), torch.eye(2), torch.zeros(2, 1)), dim=1).requires_grad_(True)
+W_out = torch.cat((torch.eye(2), torch.zeros(2, 1)), dim=1).requires_grad_(True)
+print(W_rec)
+print(W_out)
+print(W_rec.shape)
+quit()
+
+# class Test_RTRL():
+
+#     @classmethod
+#     def setUpClass(cls):
+
+
+#         W_rec = torch.cat((torch.eye(2), torch.eye(2), torch.zeros(2)), dim=1)
+#         W_out = torch.cat((torch.eye(2), torch.zeros(2)), dim=1)
+
+#         cls.W_in = np.eye(2)
+#         cls.W_rec = np.eye(2)
+#         cls.W_out = np.eye(2)
+#         cls.b_rec = np.zeros(2)
+#         cls.b_out = np.zeros(2)
+
+#         cls.rnn = RNN(cls.W_in, cls.W_rec, cls.W_out,
+#                       cls.b_rec, cls.b_out,
+#                       activation=identity,
+#                       alpha=1,
+#                       output=softmax,
+#                       loss=softmax_cross_entropy)
+
+#         cls.rnn.a = np.ones(2)
+#         cls.rnn.a_prev = np.ones(2)
+#         cls.rnn.x = np.ones(2) * 2
+#         cls.rnn.error = np.ones(2) * 0.5
+#         cls.rnn.a_J = np.eye(2)
+
+#     def test_update_learning_vars(self):
+
+#         self.learn_alg = RTRL(self.rnn)
+#         self.learn_alg.dadw += 1
+#         self.learn_alg.update_learning_vars()
+#         papw = np.concatenate([np.eye(2), np.eye(2),
+#                                np.eye(2) * 2, np.eye(2) * 2, np.eye(2)], axis=1)
+#         correct_dadw = np.ones((2, 10)) + papw
+#         assert_allclose(self.learn_alg.dadw, correct_dadw)
+
+#     def test_get_rec_grads(self):
+
+#         self.learn_alg = RTRL(self.rnn)
+#         self.learn_alg.q = np.ones(2)
+#         self.learn_alg.dadw = np.concatenate([np.eye(2) * i for i in range(5)],
+#                                              axis=1)
+#         rec_grads = self.learn_alg.get_rec_grads()
+#         correct_rec_grads = np.array([list(range(5)) for _ in [0, 1]])
+#         assert_allclose(rec_grads, correct_rec_grads)
 
 
 

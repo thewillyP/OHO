@@ -117,11 +117,21 @@ def getDataLoaderIO(randFn, t1: int, t2: int, ts: torch.Tensor, numEx: int, batc
     gen = lambda: createDelayAddExample(t1, t2, ts, randFn)
     XS, YS = createExamples(numEx, gen)
     ds = TensorDataset(XS, YS)
-    dl = DataLoader(ds, batch_size=batchSize, shuffle=True)
+    dl = DataLoader(ds, batch_size=batchSize, shuffle=True, drop_last=True)
     return dl
 
 
 
+def getRandFn(datasetType: DatasetType):
+    match datasetType:
+        case DatasetType.Random:
+            return lambda: (randomUniform, randomUniform)
+        case DatasetType.Sparse:
+            return lambda: sparseIO(sparseUniformConstOutT(8))
+        case DatasetType.Wave:
+            return lambda: (waveIO(waveArbitraryUniform), waveIO(waveArbitraryUniform))
+        case _:
+            raise Exception("Invalid dataset type")
 
 
 # %%

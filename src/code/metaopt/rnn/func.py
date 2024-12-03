@@ -16,6 +16,12 @@ D = TypeVar('D')
 X = TypeVar('X')
 Y = TypeVar('Y')
 
+def sequenceA(fs: Iterator[Callable[[A], B]]) -> Callable[[A], Iterator[B]]:
+    return lambda a: map(lambda f: f(a), fs)
+
+def liftAN(f: Callable[[B, B], B], fs: Iterator[Callable[[A], B]]) -> Callable[[A], B]:
+    return lambda a: reduce(f, map(lambda f: f(a), fs))
+
 @curry
 def scan(f: Callable[[T, X], T], state: T, it: Iterator[X]) -> Generator[T, None, None]:
     yield state
@@ -118,34 +124,37 @@ def fmap(g: Callable[[B], C], f: Callable[[A], B]) -> Callable[[A], C]:
 
 
 
-@curry
-def initializeParametersIO(n_in: int, n_h: int, n_out: int
-                        ) -> tuple[torch.nn.Parameter, torch.nn.Parameter, torch.nn.Parameter, torch.nn.Parameter, torch.nn.Parameter]:
-    W_in = np.random.normal(0, np.sqrt(1/(n_in)), (n_h, n_in))
-    W_rec = np.linalg.qr(np.random.normal(0, 1, (n_h, n_h)))[0]
-    W_out = np.random.normal(0, np.sqrt(1/(n_h)), (n_out, n_h))
-    b_rec = np.random.normal(0, np.sqrt(1/(n_h)), (n_h,))
-    b_out = np.random.normal(0, np.sqrt(1/(n_out)), (n_out,))
+# @curry
+# def initializeParametersIO(n_in: int, n_h: int, n_out: int
+#                         ) -> tuple[torch.nn.Parameter, torch.nn.Parameter, torch.nn.Parameter, torch.nn.Parameter, torch.nn.Parameter]:
+#     W_in = np.random.normal(0, np.sqrt(1/(n_in)), (n_h, n_in))
+#     W_rec = np.linalg.qr(np.random.normal(0, 1, (n_h, n_h)))[0]
+#     W_out = np.random.normal(0, np.sqrt(1/(n_h)), (n_out, n_h))
+#     b_rec = np.random.normal(0, np.sqrt(1/(n_h)), (n_h,))
+#     b_out = np.random.normal(0, np.sqrt(1/(n_out)), (n_out,))
 
-    # W_in = np.random.uniform(-np.sqrt(1/(n_h)), np.sqrt(1/(n_h)), (n_h, n_in))
-    # W_rec = np.random.uniform(-np.sqrt(1/(n_h)), np.sqrt(1/(n_h)), (n_h, n_h))
-    # W_out = np.random.uniform(-np.sqrt(1/(n_h)), np.sqrt(1/(n_h)), (n_out, n_h))
-    # b_rec = np.random.uniform(-np.sqrt(1/(n_h)), np.sqrt(1/(n_h)), (n_h,))
-    # b_out = np.random.uniform(-np.sqrt(1/(n_h)), np.sqrt(1/(n_h)), (n_out,))
+#     # W_in = np.random.uniform(-np.sqrt(1/(n_h)), np.sqrt(1/(n_h)), (n_h, n_in))
+#     # W_rec = np.random.uniform(-np.sqrt(1/(n_h)), np.sqrt(1/(n_h)), (n_h, n_h))
+#     # W_out = np.random.uniform(-np.sqrt(1/(n_h)), np.sqrt(1/(n_h)), (n_out, n_h))
+#     # b_rec = np.random.uniform(-np.sqrt(1/(n_h)), np.sqrt(1/(n_h)), (n_h,))
+#     # b_out = np.random.uniform(-np.sqrt(1/(n_h)), np.sqrt(1/(n_h)), (n_out,))
 
 
-    # _W_rec = torch.nn.Parameter(torch.tensor(W_rec, requires_grad=True, dtype=torch.float32))
-    # _W_in = torch.nn.Parameter(torch.tensor(W_in, requires_grad=True, dtype=torch.float32))
-    # _b_rec = torch.nn.Parameter(torch.tensor(b_rec, requires_grad=True, dtype=torch.float32))
-    # _W_out = torch.nn.Parameter(torch.tensor(W_out, requires_grad=True, dtype=torch.float32))
-    # _b_out = torch.nn.Parameter(torch.tensor(b_out, requires_grad=True, dtype=torch.float32))
-    _W_rec = torch.nn.Parameter(torch.from_numpy(W_rec).float().requires_grad_())
-    _W_in = torch.nn.Parameter(torch.from_numpy(W_in).float().requires_grad_())
-    _b_rec = torch.nn.Parameter(torch.from_numpy(b_rec).float().requires_grad_())
-    _W_out = torch.nn.Parameter(torch.from_numpy(W_out).float().requires_grad_())
-    _b_out = torch.nn.Parameter(torch.from_numpy(b_out).float().requires_grad_())
+#     # _W_rec = torch.nn.Parameter(torch.tensor(W_rec, requires_grad=True, dtype=torch.float32))
+#     # _W_in = torch.nn.Parameter(torch.tensor(W_in, requires_grad=True, dtype=torch.float32))
+#     # _b_rec = torch.nn.Parameter(torch.tensor(b_rec, requires_grad=True, dtype=torch.float32))
+#     # _W_out = torch.nn.Parameter(torch.tensor(W_out, requires_grad=True, dtype=torch.float32))
+#     # _b_out = torch.nn.Parameter(torch.tensor(b_out, requires_grad=True, dtype=torch.float32))
+#     _W_rec = torch.nn.Parameter(torch.from_numpy(W_rec).float().requires_grad_())
+#     _W_in = torch.nn.Parameter(torch.from_numpy(W_in).float().requires_grad_())
+#     _b_rec = torch.nn.Parameter(torch.from_numpy(b_rec).float().requires_grad_())
+#     _W_out = torch.nn.Parameter(torch.from_numpy(W_out).float().requires_grad_())
+#     _b_out = torch.nn.Parameter(torch.from_numpy(b_out).float().requires_grad_())
 
-    return _W_rec, _W_in, _b_rec, _W_out, _b_out
+#     return _W_rec, _W_in, _b_rec, _W_out, _b_out
+
+
+
 
 
 # linear_ = curry(lambda w, b, h: f.linear(h, w, b))
